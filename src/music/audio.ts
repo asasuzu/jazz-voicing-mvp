@@ -4,7 +4,20 @@ let loopTimer: number | null = null
 let looping = false
 
 function getAudioContext(): AudioContext {
-  if (!audioContext) audioContext = new AudioContext()
+  if (audioContext) return audioContext
+
+  // iOSは既定だと本体の消音スイッチでWeb Audioが無音になる。playbackにすると鳴る。
+  const session = (navigator as Navigator & { audioSession?: { type: string } }).audioSession
+  if (session) session.type = 'playback'
+
+  audioContext = new AudioContext()
+
+  // 古いiOSはresumeだけでは開かないので、ジェスチャ中に無音バッファを1回鳴らして解除する。
+  const unlock = audioContext.createBufferSource()
+  unlock.buffer = audioContext.createBuffer(1, 1, 22050)
+  unlock.connect(audioContext.destination)
+  unlock.start(0)
+
   return audioContext
 }
 
@@ -12,7 +25,7 @@ function frequencyFromMidi(midi: number): number {
   return 440 * 2 ** ((midi - 69) / 12)
 }
 
-function scheduleNote(ctx: AudioContext, midi: number, start: number, duration: number, gainValue = 0.055): void {
+function scheduleNote(ctx: AudioContext, midi: number, start: number, duration: number, gainValue = 0.13): void {
   const fundamental = ctx.createOscillator()
   const upper = ctx.createOscillator()
   const gain = ctx.createGain()
@@ -89,7 +102,7 @@ export async function startLoop(
 
     chords.forEach((chord, index) => {
       const noteStart = nextStart + index * secondsPerChord
-      chord.forEach((note) => scheduleNote(ctx, note, noteStart, duration, 0.045))
+      chord.forEach((note) => scheduleNote(ctx, note, noteStart, duration, 0.11))
     })
 
     const chorusSeconds = chords.length * secondsPerChord
@@ -108,6 +121,6 @@ export async function playSequence(midiChords: number[][], tempo: number, beatsP
   midiChords.forEach((chord, index) => {
     const noteStart = start + index * secondsPerChord
     const duration = Math.max(0.25, secondsPerChord * 0.82)
-    chord.forEach((note) => scheduleNote(ctx, note, noteStart, duration, 0.045))
+    chord.forEach((note) => scheduleNote(ctx, note, noteStart, duration, 0.11))
   })
 }
