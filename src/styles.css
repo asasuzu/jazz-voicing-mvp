@@ -27,7 +27,19 @@ input, select { width: 100%; color: #f3efe8; background: #0d0d0e; border: 1px so
 input:focus, select:focus { border-color: #8b7961; box-shadow: 0 0 0 3px rgba(139,121,97,.12); }
 .field-wide input { padding: 16px 17px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 16px; letter-spacing: .02em; }
 select, input[type="number"] { padding: 12px 13px; }
-.control-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
+.control-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+
+.tempo-field { margin-bottom: 18px; }
+.tempo-stepper { display: grid; grid-template-columns: 88px 1fr 88px; gap: 10px; align-items: stretch; }
+.tempo-stepper button { min-height: 56px; background: #171617; border: 1px solid #3a3739; color: #d6d0c8; font-size: 16px; font-variant-numeric: tabular-nums; }
+.tempo-stepper button:active { transform: scale(.97); }
+.tempo-readout { display: flex; align-items: baseline; justify-content: center; gap: 7px; background: #0d0d0e; border: 1px solid #383638; border-radius: 11px; }
+.tempo-readout strong { font-family: Georgia, "Times New Roman", serif; font-size: 34px; font-weight: 500; color: #f3efe8; font-variant-numeric: tabular-nums; line-height: 1; }
+.tempo-readout em { font-style: normal; font-size: 11px; color: #6f6a64; letter-spacing: .06em; }
+.tempo-range { margin-top: 12px; height: 34px; }
+.tempo-presets { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; margin-top: 10px; }
+.tempo-presets button { min-height: 44px; padding: 0; background: #141314; border: 1px solid #322f31; color: #9d978f; font-size: 13px; font-variant-numeric: tabular-nums; }
+.tempo-presets button.active { background: #e9dfd0; border-color: #e9dfd0; color: #181614; }
 .inline-number { position: relative; }
 .inline-number em { position: absolute; right: 13px; top: 50%; transform: translateY(-50%); color: #6f6a64; font-style: normal; font-size: 11px; }
 .switch-row { display: grid; grid-template-columns: 1fr 1fr; gap: 22px; margin-top: 22px; padding-top: 20px; border-top: 1px solid #2d2b2c; align-items: center; }
@@ -71,6 +83,10 @@ footer { margin-top: 46px; padding-top: 18px; border-top: 1px solid #242224; col
   h1 { font-size: 52px; }
   .controls { padding: 17px; }
   .control-grid, .switch-row, .voicing-grid { grid-template-columns: 1fr; }
+  .tempo-stepper { grid-template-columns: 78px 1fr 78px; }
+  .tempo-stepper button { min-height: 62px; }
+  .tempo-readout strong { font-size: 38px; }
+  .tempo-range { height: 40px; }
   .results-head { align-items: flex-start; flex-direction: column; }
   .action-row.compact { width: 100%; }
   .action-row.compact button { flex: 1; }

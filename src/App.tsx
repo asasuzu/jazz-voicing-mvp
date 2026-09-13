@@ -1,5 +1,5 @@
-import { useMemo, useState } from 'react'
-import { playChord, playSequence } from './music/audio'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { playChord, playSequence, startLoop, stopPlayback } from './music/audio'
 import { downloadMidi } from './music/midi'
 import type { GeneratedVoicing, PlayContext } from './music/types'
 import { generateProgressionVoicings, RANGE_PRESETS } from './music/voicings'
@@ -12,17 +12,28 @@ function App() {
   const [rangeId, setRangeId] = useState('lh')
   const [colorful, setColorful] = useState(true)
   const [randomness, setRandomness] = useState(0.38)
-  const [tempo, setTempo] = useState(100)
+  const [tempo, setTempo] = useState(180)
   const [beatsPerChord, setBeatsPerChord] = useState(4)
   const [voicings, setVoicings] = useState<GeneratedVoicing[]>([])
   const [error, setError] = useState('')
+  const [looping, setLooping] = useState(false)
+  const [chorus, setChorus] = useState(0)
 
   const selectedRange = useMemo(
     () => RANGE_PRESETS.find((range) => range.id === rangeId) ?? RANGE_PRESETS[0],
     [rangeId],
   )
 
+  // ループ再生中にテンポを動かしても次のコーラスから反映させる
+  const timingRef = useRef({ tempo, beatsPerChord })
+  useEffect(() => {
+    timingRef.current = { tempo, beatsPerChord }
+  }, [tempo, beatsPerChord])
+
+  const changeTempo = (value: number) => setTempo(Math.min(300, Math.max(40, Math.round(value))))
+
   const generate = () => {
+    stopLoop()
     try {
       setError('')
       const next = generateProgressionVoicings(progression, {
@@ -36,6 +47,25 @@ function App() {
       setVoicings([])
       setError(caught instanceof Error ? caught.message : '生成に失敗しました。')
     }
+  }
+
+  const stopLoop = () => {
+    stopPlayback()
+    setLooping(false)
+  }
+
+  const beginLoop = () => {
+    const options = { context, range: selectedRange, colorful, randomness }
+    setLooping(true)
+    startLoop(
+      (chorusIndex) => {
+        const take = generateProgressionVoicings(progression, options)
+        setVoicings(take)
+        setChorus(chorusIndex + 1)
+        return take.map((item) => item.midi)
+      },
+      () => timingRef.current,
+    )
   }
 
   const movementLabel = (movement?: number) => {
@@ -67,6 +97,40 @@ function App() {
           <small>例: Dm7 G7 Cmaj7 | F#m7b5 B7alt EmMaj7 | C7#11</small>
         </label>
 
+        <div className="field tempo-field">
+          <span>Tempo</span>
+          <div className="tempo-stepper">
+            <button type="button" aria-label="テンポを10下げる" onClick={() => changeTempo(tempo - 10)}>−10</button>
+            <div className="tempo-readout">
+              <strong>{tempo}</strong>
+              <em>BPM</em>
+            </div>
+            <button type="button" aria-label="テンポを10上げる" onClick={() => changeTempo(tempo + 10)}>+10</button>
+          </div>
+          <input
+            className="tempo-range"
+            type="range"
+            min={40}
+            max={300}
+            step={1}
+            value={tempo}
+            onChange={(event) => changeTempo(Number(event.target.value))}
+          />
+          <div className="tempo-presets">
+            {[120, 160, 180, 220, 260].map((preset) => (
+              <button
+                type="button"
+                key={preset}
+                className={preset === tempo ? 'active' : ''}
+                onClick={() => changeTempo(preset)}
+              >
+                {preset}
+              </button>
+            ))}
+          </div>
+          <small>ループ再生中に変えると、次の周から反映されます。</small>
+        </div>
+
         <div className="control-grid">
           <label className="field">
             <span>Situation</span>
@@ -83,20 +147,6 @@ function App() {
                 <option key={range.id} value={range.id}>{range.label}</option>
               ))}
             </select>
-          </label>
-
-          <label className="field">
-            <span>Tempo</span>
-            <div className="inline-number">
-              <input
-                type="number"
-                min={40}
-                max={240}
-                value={tempo}
-                onChange={(event) => setTempo(Number(event.target.value))}
-              />
-              <em>BPM</em>
-            </div>
           </label>
 
           <label className="field">
@@ -147,7 +197,22 @@ function App() {
               <h2>Voicing path</h2>
             </div>
             <div className="action-row compact">
-              <button className="secondary" onClick={() => playSequence(voicings.map((item) => item.midi), tempo, beatsPerChord)}>
+              {looping ? (
+                <button className="secondary" onClick={stopLoop}>
+                  Stop loop · chorus {chorus}
+                </button>
+              ) : (
+                <button className="secondary" onClick={beginLoop}>
+                  Loop play
+                </button>
+              )}
+              <button
+                className="secondary"
+                onClick={() => {
+                  stopLoop()
+                  playSequence(voicings.map((item) => item.midi), tempo, beatsPerChord)
+                }}
+              >
                 Play all
               </button>
               <button className="primary" onClick={() => downloadMidi(voicings, tempo, beatsPerChord)}>
@@ -175,6 +240,7 @@ function App() {
           </div>
 
           <div className="note">
+            Loop playは進行を繰り返し再生し、1周ごとにボイシングを選び直します。同じ進行でも毎周ちがう響きになります。
             Preview音はブラウザ内蔵の簡易シンセです。書き出すMIDIは音声ではなく演奏情報なので、DAW側で好きなピアノ音源を割り当てられます。
           </div>
         </section>
