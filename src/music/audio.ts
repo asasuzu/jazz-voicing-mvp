@@ -78,9 +78,14 @@ export function stopPlayback(): void {
 /**
  * 各コーラスの直前に buildChorus を呼ぶので、1周ごとに違うボイシングを差し込める。
  */
+export interface TimedChord {
+  midi: number[]
+  beats: number
+}
+
 export async function startLoop(
-  buildChorus: (chorusIndex: number) => number[][],
-  getTiming: () => { tempo: number; beatsPerChord: number },
+  buildChorus: (chorusIndex: number) => TimedChord[],
+  getTempo: () => number,
 ): Promise<void> {
   const ctx = getAudioContext()
   if (ctx.state === 'suspended') await ctx.resume()
@@ -93,19 +98,20 @@ export async function startLoop(
   const scheduleChorus = () => {
     if (!looping) return
 
-    const { tempo, beatsPerChord } = getTiming()
-    const secondsPerChord = (60 / tempo) * beatsPerChord
-    const duration = Math.max(0.25, secondsPerChord * 0.82)
-
+    const secondsPerBeat = 60 / getTempo()
     const chords = buildChorus(chorusIndex)
     chorusIndex += 1
 
-    chords.forEach((chord, index) => {
-      const noteStart = nextStart + index * secondsPerChord
-      chord.forEach((note) => scheduleNote(ctx, note, noteStart, duration, 0.11))
+    let cursor = nextStart
+    let chorusSeconds = 0
+    chords.forEach((chord) => {
+      const chordSeconds = chord.beats * secondsPerBeat
+      const duration = Math.max(0.2, chordSeconds * 0.82)
+      chord.midi.forEach((note) => scheduleNote(ctx, note, cursor, duration, 0.11))
+      cursor += chordSeconds
+      chorusSeconds += chordSeconds
     })
 
-    const chorusSeconds = chords.length * secondsPerChord
     nextStart += chorusSeconds
     loopTimer = window.setTimeout(scheduleChorus, Math.max(60, (chorusSeconds - 0.4) * 1000))
   }
@@ -113,14 +119,15 @@ export async function startLoop(
   scheduleChorus()
 }
 
-export async function playSequence(midiChords: number[][], tempo: number, beatsPerChord: number): Promise<void> {
+export async function playSequence(chords: TimedChord[], tempo: number): Promise<void> {
   const ctx = getAudioContext()
   if (ctx.state === 'suspended') await ctx.resume()
-  const secondsPerChord = (60 / tempo) * beatsPerChord
-  const start = ctx.currentTime + 0.06
-  midiChords.forEach((chord, index) => {
-    const noteStart = start + index * secondsPerChord
-    const duration = Math.max(0.25, secondsPerChord * 0.82)
-    chord.forEach((note) => scheduleNote(ctx, note, noteStart, duration, 0.11))
+  const secondsPerBeat = 60 / tempo
+  let cursor = ctx.currentTime + 0.06
+  chords.forEach((chord) => {
+    const chordSeconds = chord.beats * secondsPerBeat
+    const duration = Math.max(0.2, chordSeconds * 0.82)
+    chord.midi.forEach((note) => scheduleNote(ctx, note, cursor, duration, 0.11))
+    cursor += chordSeconds
   })
 }

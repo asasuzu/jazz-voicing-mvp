@@ -211,10 +211,11 @@ export interface GenerateOptions {
   range: RangePreset
   colorful: boolean
   randomness: number
+  beatsPerBar: number
 }
 
 export function generateProgressionVoicings(input: string, options: GenerateOptions): GeneratedVoicing[] {
-  const chords = parseProgression(input)
+  const chords = parseProgression(input, options.beatsPerBar)
   const result: GeneratedVoicing[] = []
 
   for (const chord of chords) {

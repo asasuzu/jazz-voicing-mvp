@@ -26,6 +26,10 @@ export interface ParsedChord {
     explicit9: boolean
     explicit13: boolean
   }
+  /** このコードが鳴る拍数。1小節に複数コードがあれば小節の拍数を均等に分けた値になる。 */
+  beats: number
+  /** 0始まりの小節番号。カード表示を小節ごとにまとめるために使う。 */
+  barIndex: number
 }
 
 export interface VoicingTemplate {

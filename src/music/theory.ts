@@ -111,6 +111,8 @@ export function parseChordSymbol(symbol: string): ParsedChord {
     quality: detectQuality(suffix),
     suffix,
     bass,
+    beats: 1, // parseProgressionが小節構造から上書きする
+    barIndex: 0,
     flags: {
       alt: lower.includes('alt'),
       flat9: lower.includes('b9'),
@@ -123,16 +125,24 @@ export function parseChordSymbol(symbol: string): ParsedChord {
   }
 }
 
-export function parseProgression(input: string): ParsedChord[] {
-  const symbols = input
-    .split(/[\s,|]+/)
-    .map((value) => value.trim())
-    .filter(Boolean)
+export function parseProgression(input: string, beatsPerBar = 4): ParsedChord[] {
+  const bars = input
+    .split('|')
+    .map((bar) => bar.split(/[\s,]+/).map((value) => value.trim()).filter(Boolean))
+    .filter((bar) => bar.length > 0)
 
-  if (symbols.length === 0) throw new Error('コード進行を1つ以上入力してください。')
-  if (symbols.length > 32) throw new Error('MVPでは一度に32コードまでにしています。')
+  if (bars.length === 0) throw new Error('コード進行を1つ以上入力してください。')
 
-  return symbols.map(parseChordSymbol)
+  const totalChords = bars.reduce((sum, bar) => sum + bar.length, 0)
+  if (totalChords > 32) throw new Error('MVPでは一度に32コードまでにしています。')
+
+  return bars.flatMap((bar, barIndex) =>
+    bar.map((symbol) => ({
+      ...parseChordSymbol(symbol),
+      beats: beatsPerBar / bar.length,
+      barIndex,
+    })),
+  )
 }
 
 export function buildAscendingIntervals(degrees: string[]): number[] {

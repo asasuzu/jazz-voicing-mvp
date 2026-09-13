@@ -29,7 +29,7 @@ function textBytes(text: string): number[] {
   return Array.from(new TextEncoder().encode(text))
 }
 
-export function createMidiFile(voicings: GeneratedVoicing[], tempo: number, beatsPerChord: number): Uint8Array {
+export function createMidiFile(voicings: GeneratedVoicing[], tempo: number): Uint8Array {
   const track: number[] = []
   const microsecondsPerQuarter = Math.round(60_000_000 / tempo)
 
@@ -41,12 +41,11 @@ export function createMidiFile(voicings: GeneratedVoicing[], tempo: number, beat
   )
   track.push(0x00, 0xc0, 0x00)
 
-  const durationTicks = Math.round(TICKS_PER_QUARTER * beatsPerChord)
-
   voicings.forEach((voicing) => {
     const marker = textBytes(voicing.chord.symbol)
     track.push(0x00, 0xff, 0x06, ...variableLength(marker.length), ...marker)
 
+    const durationTicks = Math.round(TICKS_PER_QUARTER * voicing.chord.beats)
     voicing.midi.forEach((note) => track.push(0x00, 0x90, note, 82))
     voicing.midi.forEach((note, index) => {
       track.push(...variableLength(index === 0 ? durationTicks : 0), 0x80, note, 0)
@@ -66,8 +65,8 @@ export function createMidiFile(voicings: GeneratedVoicing[], tempo: number, beat
   return new Uint8Array([...header, ...trackChunk])
 }
 
-export function downloadMidi(voicings: GeneratedVoicing[], tempo: number, beatsPerChord: number): void {
-  const bytes = createMidiFile(voicings, tempo, beatsPerChord)
+export function downloadMidi(voicings: GeneratedVoicing[], tempo: number): void {
+  const bytes = createMidiFile(voicings, tempo)
   const blob = new Blob([bytes as BlobPart], { type: 'audio/midi' })
   const url = URL.createObjectURL(blob)
   const anchor = document.createElement('a')

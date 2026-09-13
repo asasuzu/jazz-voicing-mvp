@@ -4,7 +4,7 @@ import { downloadMidi } from './music/midi'
 import type { GeneratedVoicing, PlayContext } from './music/types'
 import { generateProgressionVoicings, RANGE_PRESETS } from './music/voicings'
 
-const DEFAULT_PROGRESSION = 'Dm7 | G7 | Cmaj7 | A7alt'
+const DEFAULT_PROGRESSION = 'Dm7 G7 | Cmaj7 | A7alt'
 
 function App() {
   const [progression, setProgression] = useState(DEFAULT_PROGRESSION)
@@ -13,7 +13,7 @@ function App() {
   const [colorful, setColorful] = useState(true)
   const [randomness, setRandomness] = useState(0.38)
   const [tempo, setTempo] = useState(180)
-  const [beatsPerChord, setBeatsPerChord] = useState(4)
+  const [beatsPerBar, setBeatsPerBar] = useState(4)
   const [voicings, setVoicings] = useState<GeneratedVoicing[]>([])
   const [error, setError] = useState('')
   const [looping, setLooping] = useState(false)
@@ -24,11 +24,16 @@ function App() {
     [rangeId],
   )
 
-  // ループ再生中にテンポを動かしても次のコーラスから反映させる
-  const timingRef = useRef({ tempo, beatsPerChord })
+  const generateOptions = useMemo(
+    () => ({ context, range: selectedRange, colorful, randomness, beatsPerBar }),
+    [context, selectedRange, colorful, randomness, beatsPerBar],
+  )
+
+  // ループ再生中にテンポ/設定を動かしても次のコーラスから反映させる
+  const liveRef = useRef({ tempo, generateOptions })
   useEffect(() => {
-    timingRef.current = { tempo, beatsPerChord }
-  }, [tempo, beatsPerChord])
+    liveRef.current = { tempo, generateOptions }
+  }, [tempo, generateOptions])
 
   const changeTempo = (value: number) => setTempo(Math.min(300, Math.max(40, Math.round(value))))
 
@@ -36,12 +41,7 @@ function App() {
     stopLoop()
     try {
       setError('')
-      const next = generateProgressionVoicings(progression, {
-        context,
-        range: selectedRange,
-        colorful,
-        randomness,
-      })
+      const next = generateProgressionVoicings(progression, generateOptions)
       setVoicings(next)
     } catch (caught) {
       setVoicings([])
@@ -55,17 +55,29 @@ function App() {
   }
 
   const beginLoop = () => {
-    const options = { context, range: selectedRange, colorful, randomness }
     setLooping(true)
     startLoop(
       (chorusIndex) => {
-        const take = generateProgressionVoicings(progression, options)
+        const take = generateProgressionVoicings(progression, liveRef.current.generateOptions)
         setVoicings(take)
         setChorus(chorusIndex + 1)
-        return take.map((item) => item.midi)
+        return take.map((item) => ({ midi: item.midi, beats: item.chord.beats }))
       },
-      () => timingRef.current,
+      () => liveRef.current.tempo,
     )
+  }
+
+  const barsOf = (items: GeneratedVoicing[]) => {
+    const bars: { voicing: GeneratedVoicing; index: number }[][] = []
+    items.forEach((voicing, index) => {
+      const bar = bars[bars.length - 1]
+      if (bar && bar[0].voicing.chord.barIndex === voicing.chord.barIndex) {
+        bar.push({ voicing, index })
+      } else {
+        bars.push([{ voicing, index }])
+      }
+    })
+    return bars
   }
 
   const movementLabel = (movement?: number) => {
@@ -94,7 +106,10 @@ function App() {
             onChange={(event) => setProgression(event.target.value)}
             placeholder="Dm7 | G7 | Cmaj7 | A7alt"
           />
-          <small>例: Dm7 G7 Cmaj7 | F#m7b5 B7alt EmMaj7 | C7#11</small>
+          <small>
+            「|」が小節の区切りです。1小節に複数コードを書くと、その小節の拍数を均等に分けます。
+            例: <code>Dm7 G7 | Cmaj7 | A7alt</code> なら1小節目はDm7とG7で2拍ずつ。
+          </small>
         </label>
 
         <div className="field tempo-field">
@@ -150,12 +165,11 @@ function App() {
           </label>
 
           <label className="field">
-            <span>Beats / chord</span>
-            <select value={beatsPerChord} onChange={(event) => setBeatsPerChord(Number(event.target.value))}>
-              <option value={1}>1</option>
-              <option value={2}>2</option>
-              <option value={4}>4</option>
-              <option value={8}>8</option>
+            <span>拍子(1小節の拍数)</span>
+            <select value={beatsPerBar} onChange={(event) => setBeatsPerBar(Number(event.target.value))}>
+              <option value={3}>3拍子</option>
+              <option value={4}>4拍子</option>
+              <option value={6}>6拍子</option>
             </select>
           </label>
         </div>
@@ -210,34 +224,42 @@ function App() {
                 className="secondary"
                 onClick={() => {
                   stopLoop()
-                  playSequence(voicings.map((item) => item.midi), tempo, beatsPerChord)
+                  playSequence(voicings.map((item) => ({ midi: item.midi, beats: item.chord.beats })), tempo)
                 }}
               >
                 Play all
               </button>
-              <button className="primary" onClick={() => downloadMidi(voicings, tempo, beatsPerChord)}>
+              <button className="primary" onClick={() => downloadMidi(voicings, tempo)}>
                 Export MIDI
               </button>
             </div>
           </div>
 
-          <div className="voicing-grid">
-            {voicings.map((voicing, index) => (
-              <article className="voicing-card" key={`${voicing.id}-${index}`}>
-                <div className="card-topline">
-                  <span className="index">{String(index + 1).padStart(2, '0')}</span>
-                  <span className="movement">{movementLabel(voicing.movementFromPrevious)}</span>
-                </div>
-                <h3>{voicing.chord.symbol}</h3>
-                <div className="family">{voicing.label}</div>
-                <div className="notes">
-                  {voicing.noteNames.map((note) => <span key={note}>{note}</span>)}
-                </div>
-                <div className="degrees">{voicing.degrees.join(' · ')}</div>
-                <button className="play-one" onClick={() => playChord(voicing.midi)}>Play chord</button>
-              </article>
-            ))}
-          </div>
+          {barsOf(voicings).map((bar, barPosition) => (
+            <div className="bar-row" key={bar[0].voicing.chord.barIndex}>
+              <div className="bar-label">小節 {barPosition + 1}</div>
+              <div className="voicing-grid">
+                {bar.map(({ voicing, index }) => (
+                  <article className="voicing-card" key={`${voicing.id}-${index}`}>
+                    <div className="card-topline">
+                      <span className="index">{String(index + 1).padStart(2, '0')}</span>
+                      <span className="movement">{movementLabel(voicing.movementFromPrevious)}</span>
+                    </div>
+                    <h3>{voicing.chord.symbol}</h3>
+                    <div className="family">
+                      {voicing.label}
+                      {bar.length > 1 && <span className="beats"> · {voicing.chord.beats}拍</span>}
+                    </div>
+                    <div className="notes">
+                      {voicing.noteNames.map((note) => <span key={note}>{note}</span>)}
+                    </div>
+                    <div className="degrees">{voicing.degrees.join(' · ')}</div>
+                    <button className="play-one" onClick={() => playChord(voicing.midi)}>Play chord</button>
+                  </article>
+                ))}
+              </div>
+            </div>
+          ))}
 
           <div className="note">
             Loop playは進行を繰り返し再生し、1周ごとにボイシングを選び直します。同じ進行でも毎周ちがう響きになります。
