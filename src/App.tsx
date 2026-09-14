@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { playChord, playPerformance, startPerformanceLoop, stopPlayback } from './music/render/audio'
 import { downloadMidi } from './music/render/midi'
 import { buildPerformance } from './music/perform'
+import type { PerformOptions } from './music/perform'
 import type { GeneratedVoicing, PlayContext, Take } from './music/types'
 import { generateProgressionVoicings, RANGE_PRESETS } from './music/voicings'
 
@@ -12,6 +13,24 @@ const DEFAULT_PROGRESSION = 'Dm7 G7 | Cmaj7 | A7alt'
  * 置き換わるまでの橋渡しとして、ここだけで Take へ変換する。
  * 両手の区別が無いので、全音を左手側に積む(Powell 的な単手の扱い)。
  */
+/**
+ * toTake()経由のレガシー経路(片手前提)用の暫定PerformOptions。
+ * densityベースのUI(Step5)に置き換わるまでの橋渡しなので、strict(揺れ無し)で
+ * ベース無しにしておく。comping/humanizeの本実装が入ったことで、Step1時点の
+ * 「ブロックコードのまま」という前提はここでは維持されない(Step4で意図的に変わる)。
+ */
+function legacyPerformOptions(tempo: number, beatsPerBar: number): PerformOptions {
+  return {
+    tempo,
+    beatsPerBar,
+    withBass: false,
+    strict: true,
+    swing: 'auto',
+    density: 'standard',
+    choruses: 1,
+  }
+}
+
 function toTake(voicings: GeneratedVoicing[]): Take {
   return {
     id: 'legacy-single-hand',
@@ -82,10 +101,10 @@ function App() {
         const nextVoicings = generateProgressionVoicings(progression, liveRef.current.generateOptions)
         setVoicings(nextVoicings)
         setChorus(chorusIndex + 1)
-        return buildPerformance(toTake(nextVoicings), {
-          tempo: liveRef.current.tempo,
-          beatsPerBar: liveRef.current.generateOptions.beatsPerBar,
-        })
+        return buildPerformance(
+          toTake(nextVoicings),
+          legacyPerformOptions(liveRef.current.tempo, liveRef.current.generateOptions.beatsPerBar),
+        )
       },
       () => liveRef.current.tempo,
     )
@@ -248,14 +267,14 @@ function App() {
                 className="secondary"
                 onClick={() => {
                   stopLoop()
-                  playPerformance(buildPerformance(toTake(voicings), { tempo, beatsPerBar }), tempo)
+                  playPerformance(buildPerformance(toTake(voicings), legacyPerformOptions(tempo, beatsPerBar)), tempo)
                 }}
               >
                 Play all
               </button>
               <button
                 className="primary"
-                onClick={() => downloadMidi(buildPerformance(toTake(voicings), { tempo, beatsPerBar }), tempo)}
+                onClick={() => downloadMidi(buildPerformance(toTake(voicings), legacyPerformOptions(tempo, beatsPerBar)), tempo)}
               >
                 Export MIDI
               </button>

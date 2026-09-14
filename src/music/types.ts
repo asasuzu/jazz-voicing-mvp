@@ -97,3 +97,18 @@ export interface Performance {
   totalBeats: number
   take: Take
 }
+
+/** コンピングのリズムパターン(comping.ts)。仕様書 §7 */
+export interface CompHit {
+  beat: number            // 小節頭からの拍。負の値は前の小節への食い込み
+  durationBeats: number
+  accent: number          // ベロシティ加算
+}
+
+export interface CompPattern {
+  id: string
+  label: string
+  density: DensityPreset[]   // どのプリセットで使うか
+  weight: number              // 抽選の重み
+  hits: CompHit[]
+}

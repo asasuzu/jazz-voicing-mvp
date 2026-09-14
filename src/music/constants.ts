@@ -1,4 +1,4 @@
-import type { DensityPreset } from './types'
+import type { ChordQuality, CompPattern, DensityPreset } from './types'
 
 /**
  * すべての「数値」をここに集約する。
@@ -114,4 +114,142 @@ export const TIMING = {
 export const AUDIO = {
   gainPerVelocity: 0.00105, // velocity 82 (旧デフォルト) で概ね 0.086〜0.11 相当になる
   previewGainBonus: 1.25,   // 単発試聴(Play chord)は少し大きめに鳴らす
+}
+
+/**
+ * ウォーキングベースの「コードトーンかスケール音」判定に使う表(bass.ts)。
+ * ルートからの半音オフセット(0=ルート)。どのモードを対応させるかは仕様書に
+ * 無いので、対応する典型的なチャーチモードを決め打ちした。
+ */
+export const BASS_CHORD_TONES: Record<ChordQuality, { third: number; fifth: number; seventh: number | null }> = {
+  major: { third: 4, fifth: 7, seventh: null },
+  major7: { third: 4, fifth: 7, seventh: 11 },
+  minor7: { third: 3, fifth: 7, seventh: 10 },
+  dominant7: { third: 4, fifth: 7, seventh: 10 },
+  halfDiminished: { third: 3, fifth: 6, seventh: 10 },
+  diminished7: { third: 3, fifth: 6, seventh: 9 },
+  minorMajor7: { third: 3, fifth: 7, seventh: 11 },
+  sus7: { third: 5, fifth: 7, seventh: 10 }, // susは3度が無いので4度(11半音ではなく5半音)を代用
+}
+
+export const BASS_SCALES: Record<ChordQuality, number[]> = {
+  major: [0, 2, 4, 5, 7, 9, 11], // Ionian
+  major7: [0, 2, 4, 5, 7, 9, 11], // Ionian
+  minor7: [0, 2, 3, 5, 7, 9, 10], // Dorian
+  dominant7: [0, 2, 4, 5, 7, 9, 10], // Mixolydian
+  halfDiminished: [0, 1, 3, 5, 6, 8, 10], // Locrian
+  diminished7: [0, 2, 3, 5, 6, 8, 9, 11], // Whole-half diminished
+  minorMajor7: [0, 2, 3, 5, 7, 9, 11], // Melodic minor
+  sus7: [0, 2, 4, 5, 7, 9, 10], // Mixolydian
+}
+
+export const BASS_ALTERED_SCALE = [0, 1, 3, 4, 6, 8, 10] // Super Locrian。altフラグの立ったdominant7用
+
+export const BASS = {
+  // ここまでは仕様書§6の本文中の確率をそのまま定数化したもの
+  headRootWeight: 0.8,
+  headFifthWeight: 0.12,
+  headThirdWeight: 0.08,
+  directionReversalRun: 5, // 「同じ方向に5音以上続いたら反転を優先」
+  // 以下はアプローチ音(次のコードへの半音上/半音下/スケール隣接音/5度上)の抽選重み。
+  // 仕様書は「から抽選」とだけ書いてあり比率の指定が無いため、
+  // tests/bass.test.ts の「次のルートへ2半音以内」が安定して7割を超えるように
+  // 実測しながら決め打ちした(5度上は7半音離れるため重みを下げてある)。
+  approachChromaticBelowWeight: 0.4,
+  approachChromaticAboveWeight: 0.4,
+  approachScaleNeighborWeight: 0.15,
+  approachFifthAboveWeight: 0.05,
+}
+
+/**
+ * コンピングの初期パターン(仕様書§7)。charleston〜restの6つは全density共通、
+ * powellJabs/powellSparseはpowell/shell3専用(仕様書の表に"専用"と明記)。
+ * 3拍子・6拍子は第2段階まで`whole`相当のフォールバックを使う(comping.ts側で処理)。
+ */
+const GENERAL_DENSITIES: DensityPreset[] = ['powell', 'shell3', 'standard', 'thick']
+const POWELL_DENSITIES: DensityPreset[] = ['powell', 'shell3']
+
+export const COMP_PATTERNS: CompPattern[] = [
+  {
+    id: 'charleston',
+    label: 'Charleston',
+    density: GENERAL_DENSITIES,
+    weight: 3,
+    hits: [
+      { beat: 0, durationBeats: 1.5, accent: 0 },
+      { beat: 1.5, durationBeats: 0.5, accent: 6 },
+    ],
+  },
+  {
+    id: 'offbeats',
+    label: 'Offbeats',
+    density: GENERAL_DENSITIES,
+    weight: 2,
+    hits: [
+      { beat: 1.5, durationBeats: 0.5, accent: 6 },
+      { beat: 3.5, durationBeats: 0.5, accent: 4 },
+    ],
+  },
+  {
+    id: 'push',
+    label: 'Push',
+    density: GENERAL_DENSITIES,
+    weight: 2,
+    hits: [{ beat: -0.5, durationBeats: 2.0, accent: 6 }],
+  },
+  {
+    id: 'whole',
+    label: 'Whole',
+    density: GENERAL_DENSITIES,
+    weight: 2,
+    hits: [{ beat: 0, durationBeats: 3.5, accent: 0 }],
+  },
+  {
+    id: 'busy',
+    label: 'Busy',
+    density: GENERAL_DENSITIES,
+    weight: 1,
+    hits: [
+      { beat: 0, durationBeats: 0.5, accent: 0 },
+      { beat: 1.5, durationBeats: 0.5, accent: 6 },
+      { beat: 2.5, durationBeats: 0.5, accent: 0 },
+      { beat: 3.5, durationBeats: 0.5, accent: 4 },
+    ],
+  },
+  {
+    id: 'rest',
+    label: 'Rest',
+    density: GENERAL_DENSITIES,
+    weight: 1,
+    hits: [],
+  },
+  {
+    id: 'powellJabs',
+    label: 'Powell jabs',
+    density: POWELL_DENSITIES,
+    weight: 3,
+    hits: [
+      { beat: 0.5, durationBeats: 0.3, accent: 4 },
+      { beat: 2.5, durationBeats: 0.3, accent: 6 },
+      { beat: 3.5, durationBeats: 0.3, accent: 4 },
+    ],
+  },
+  {
+    id: 'powellSparse',
+    label: 'Powell sparse',
+    density: POWELL_DENSITIES,
+    weight: 2,
+    hits: [{ beat: 1.5, durationBeats: 0.3, accent: 6 }],
+  },
+]
+
+/**
+ * 密度スライダー(0〜100, 既定50)がweightに掛ける係数。仕様書は
+ * 「sparse側ではwhole/restのweightを2倍、busyを0.3倍。busy側はその逆」とだけ
+ * 書いてあるので、0/50/100を3点として線形補間する形に決め打ちした。
+ */
+export const COMPING_DENSITY_SLIDER = {
+  default: 50,
+  sparseMultiplier: { wholeRest: 2, busy: 0.3 },
+  busyMultiplier: { wholeRest: 0.3, busy: 2 },
 }
