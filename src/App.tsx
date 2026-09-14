@@ -111,9 +111,14 @@ function App() {
     if (chordIndex === 0) return 'start'
     const prev = currentTake.voicings[chordIndex - 1]
     const curr = currentTake.voicings[chordIndex]
-    const movement = voicingDistance([...prev.left, ...prev.right], [...curr.left, ...curr.right])
-    if (movement <= 6) return `move ${movement} · very smooth`
-    if (movement <= 12) return `move ${movement} · smooth`
+    const prevNotes = [...prev.left, ...prev.right]
+    const currNotes = [...curr.left, ...curr.right]
+    const movement = voicingDistance(prevNotes, currNotes)
+    // 合計値は声部が増えるほど大きくなるので、そのままの閾値では厚いボイシングが
+    // 常に「粗い」ように見えてしまう。1声部あたりの平均で評価する。
+    const perVoice = movement / Math.max(prevNotes.length, currNotes.length)
+    if (perVoice <= 1.5) return `move ${movement} · very smooth`
+    if (perVoice <= 3) return `move ${movement} · smooth`
     return `move ${movement}`
   }
 
@@ -308,7 +313,18 @@ function App() {
               </button>
               <button
                 className="primary"
-                onClick={() => downloadMidi(buildPerformance(take, performOptions), tempo, beatsPerBar)}
+                onClick={() =>
+                  downloadMidi(
+                    buildPerformance(take, {
+                      ...performOptions,
+                      // 2周目以降はボイシングも引き直す。同じ響きが繰り返されると
+                      // 「毎周ちがう」というこのアプリの意味が無くなるため。
+                      takeForChorus: () => generateTakes(progression, generateOptions)[0],
+                    }),
+                    tempo,
+                    beatsPerBar,
+                  )
+                }
               >
                 Export MIDI
               </button>

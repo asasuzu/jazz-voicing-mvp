@@ -21,6 +21,12 @@ export interface PerformOptions {
   choruses: number
   /** コンピングの密度スライダー(0〜100)。省略時はCOMPING_DENSITY_SLIDER.default。 */
   rhythmDensity?: number
+  /**
+   * 2コーラス目以降のテイクを作る関数。渡すとコーラスごとにボイシングを引き直す。
+   * 「同じ進行でも毎周ちがう響き」がこのアプリの主目的なので、複数コーラスを
+   * 書き出すときは必ず渡すこと。省略すると全コーラスで同じボイシングになる。
+   */
+  takeForChorus?: (chorusIndex: number) => Take
 }
 
 function pianoBaseVelocity(density: DensityPreset): number {
@@ -43,12 +49,13 @@ export function buildPerformance(take: Take, options: PerformOptions): Performan
   for (let chorus = 0; chorus < choruses; chorus += 1) {
     const offset = chorus * beatsPerChorus
 
-    // コーラスごとにリズムを引き直す(仕様書§9)。ボイシング自体(take.voicings)は
-    // 呼び出し側が選んだテイクを毎コーラス使い回す
-    // (テイクの引き直しはApp.tsx側のループ再生が別途担っている)。
-    const compingHits = generateComping(take.chords, options.density, rhythmDensity, options.beatsPerBar)
+    // コーラスごとにテイクもリズムも引き直す(仕様書§9)。1コーラス目は呼び出し側が
+    // 選んだテイクをそのまま使い、2周目以降だけ引き直す。画面に出ているテイクと
+    // 書き出しの1周目が食い違わないようにするため。
+    const chorusTake = chorus === 0 ? take : options.takeForChorus?.(chorus) ?? take
+    const compingHits = generateComping(chorusTake.chords, options.density, rhythmDensity, options.beatsPerBar)
     compingHits.forEach((hit) => {
-      const voicing = take.voicings[hit.chordIndex]
+      const voicing = chorusTake.voicings[hit.chordIndex]
       ;[...voicing.left, ...voicing.right].forEach((midi) => {
         events.push({
           track: 'piano',
@@ -61,7 +68,7 @@ export function buildPerformance(take: Take, options: PerformOptions): Performan
     })
 
     if (options.withBass) {
-      generateBassLine(take.chords, options.beatsPerBar).forEach((note) => {
+      generateBassLine(chorusTake.chords, options.beatsPerBar).forEach((note) => {
         events.push({
           track: 'bass',
           midi: note.midi,

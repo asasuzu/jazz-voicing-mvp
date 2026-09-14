@@ -58,7 +58,7 @@ describe('ウォーキングベース', () => {
     expect(rootHits / starts).toBeGreaterThan(0.6)
   })
 
-  it('次のコードへ向かう最後の拍は、次のルートへ2半音以内', () => {
+  it('次のコードへ向かう最後の拍は、実際に使われるアプローチの形になっている', () => {
     let close = 0
     let checked = 0
     for (let run = 0; run < 20; run += 1) {
@@ -72,9 +72,13 @@ describe('ウォーキングベース', () => {
         const target = line.find((n) => Math.abs(n.startBeat - beat) < 0.01)
         if (!approach || !target) return
         checked += 1
-        if (Math.abs(approach.midi - target.midi) <= 2) close += 1
+        // 半音・全音で寄るか、スケール上を歩くか、5度上から降りるか。
+        // 「2半音以内」だけを条件にすると半音アプローチばかりの単調な
+        // ベースラインになってしまうので、実際に使われる形を許容する。
+        const move = Math.abs(approach.midi - target.midi)
+        if (move <= 2 || move === 5 || move === 7) close += 1
       })
     }
-    expect(close / checked).toBeGreaterThan(0.7)
+    expect(close / checked).toBeGreaterThan(0.8)
   })
 })

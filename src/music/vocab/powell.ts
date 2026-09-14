@@ -26,12 +26,19 @@ function buildVoicing(rootMidi: number, degrees: string[], family: string, label
   }
 }
 
-/** メジャー系は'3'、マイナー系は'b3'。diminished7は呼び出し側で個別対応する。 */
+/**
+ * メジャー系は'3'、マイナー系は'b3'。diminished7は呼び出し側で個別対応する。
+ * sus7だけは3度を持たないコードなので、代わりに4度(11th)を使う。
+ * ここに'3'を返すと sus の意味が消えて4度とぶつかる。
+ */
 function thirdDegree(quality: ChordQuality): string {
+  if (quality === 'sus7') return '11'
   return quality === 'minor7' || quality === 'halfDiminished' || quality === 'minorMajor7' ? 'b3' : '3'
 }
 
-function tenthDegree(quality: ChordQuality): string {
+/** R10は3度をオクターブ上へ置く形。3度を持たないsus7には作らない。 */
+function tenthDegree(quality: ChordQuality): string | null {
+  if (quality === 'sus7') return null
   return thirdDegree(quality) === 'b3' ? 'b10' : '10'
 }
 
@@ -71,8 +78,8 @@ export function buildPowellVoicings(chord: ParsedChord, variant: 'powell' | 'she
 
     if (variant === 'powell') {
       if (seventh) results.push(buildVoicing(rootMidi, ['1', seventh], 'powell-r7', 'Powell R7'))
-      results.push(buildVoicing(rootMidi, ['1', third], 'powell-r3', 'Powell R3'))
-      results.push(buildVoicing(rootMidi, ['1', tenth], 'powell-r10', 'Powell R10'))
+      results.push(buildVoicing(rootMidi, ['1', third], 'powell-r3', chord.quality === 'sus7' ? 'Powell R4' : 'Powell R3'))
+      if (tenth) results.push(buildVoicing(rootMidi, ['1', tenth], 'powell-r10', 'Powell R10'))
       if (hasSixth) results.push(buildVoicing(rootMidi, ['1', '6'], 'powell-r6', 'Powell R6'))
       return
     }

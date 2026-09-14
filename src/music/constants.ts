@@ -155,10 +155,12 @@ export const BASS = {
   // 仕様書は「から抽選」とだけ書いてあり比率の指定が無いため、
   // tests/bass.test.ts の「次のルートへ2半音以内」が安定して7割を超えるように
   // 実測しながら決め打ちした(5度上は7半音離れるため重みを下げてある)。
-  approachChromaticBelowWeight: 0.47,
-  approachChromaticAboveWeight: 0.47,
-  approachScaleNeighborWeight: 0.05,
-  approachFifthAboveWeight: 0.01,
+  // 半音アプローチだけに偏ると歩き方が単調になる。スケール上の隣接音と
+  // 5度上からの跳躍(5度圏で降りてくる動き)も実際のベースではよく使う。
+  approachChromaticBelowWeight: 0.3,
+  approachChromaticAboveWeight: 0.2,
+  approachScaleNeighborWeight: 0.3,
+  approachFifthAboveWeight: 0.2,
 }
 
 /**
