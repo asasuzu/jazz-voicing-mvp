@@ -1,3 +1,6 @@
+import { AUDIO } from '../constants'
+import type { Performance } from '../types'
+
 let audioContext: AudioContext | null = null
 let activeOscillators: OscillatorNode[] = []
 let loopTimer: number | null = null
@@ -25,7 +28,12 @@ function frequencyFromMidi(midi: number): number {
   return 440 * 2 ** ((midi - 69) / 12)
 }
 
-function scheduleNote(ctx: AudioContext, midi: number, start: number, duration: number, gainValue = 0.13): void {
+/** MIDI velocity(1–127) を試聴シンセのゲインへ変換する */
+function gainFromVelocity(velocity: number, bonus = 1): number {
+  return velocity * AUDIO.gainPerVelocity * bonus
+}
+
+function scheduleNote(ctx: AudioContext, midi: number, start: number, duration: number, gainValue: number): void {
   const fundamental = ctx.createOscillator()
   const upper = ctx.createOscillator()
   const gain = ctx.createGain()
@@ -58,11 +66,12 @@ function scheduleNote(ctx: AudioContext, midi: number, start: number, duration: 
   }
 }
 
+/** 1つのボイシングだけを単発で試聴する（カードの「Play chord」ボタン用） */
 export async function playChord(midi: number[], duration = 1.15): Promise<void> {
   const ctx = getAudioContext()
   if (ctx.state === 'suspended') await ctx.resume()
   const start = ctx.currentTime + 0.03
-  midi.forEach((note) => scheduleNote(ctx, note, start, duration))
+  midi.forEach((note) => scheduleNote(ctx, note, start, duration, gainFromVelocity(82, AUDIO.previewGainBonus)))
 }
 
 export function stopPlayback(): void {
@@ -75,16 +84,31 @@ export function stopPlayback(): void {
   activeOscillators = []
 }
 
-/**
- * 各コーラスの直前に buildChorus を呼ぶので、1周ごとに違うボイシングを差し込める。
- */
-export interface TimedChord {
-  midi: number[]
-  beats: number
+/** durationBeats いっぱいまで伸ばさず、少し切って粒立ちを出す。仕様に無い値なので決め打ち。 */
+const NOTE_SUSTAIN_RATIO = 0.82
+const MIN_NOTE_SECONDS = 0.2
+
+function scheduleEvents(ctx: AudioContext, performance: Performance, baseStart: number, secondsPerBeat: number): void {
+  performance.events.forEach((event) => {
+    const start = baseStart + event.startBeat * secondsPerBeat
+    const duration = Math.max(MIN_NOTE_SECONDS, event.durationBeats * secondsPerBeat * NOTE_SUSTAIN_RATIO)
+    scheduleNote(ctx, event.midi, start, duration, gainFromVelocity(event.velocity))
+  })
 }
 
-export async function startLoop(
-  buildChorus: (chorusIndex: number) => TimedChord[],
+/** 試聴も書き出しも同じ Performance を見る(仕様書 §0.2)。 */
+export async function playPerformance(performance: Performance, tempo: number): Promise<void> {
+  const ctx = getAudioContext()
+  if (ctx.state === 'suspended') await ctx.resume()
+  const secondsPerBeat = 60 / tempo
+  scheduleEvents(ctx, performance, ctx.currentTime + 0.06, secondsPerBeat)
+}
+
+/**
+ * 各コーラスの直前に buildChorus を呼ぶので、1周ごとに違う Performance を差し込める。
+ */
+export async function startPerformanceLoop(
+  buildChorus: (chorusIndex: number) => Performance,
   getTempo: () => number,
 ): Promise<void> {
   const ctx = getAudioContext()
@@ -99,35 +123,15 @@ export async function startLoop(
     if (!looping) return
 
     const secondsPerBeat = 60 / getTempo()
-    const chords = buildChorus(chorusIndex)
+    const performance = buildChorus(chorusIndex)
     chorusIndex += 1
 
-    let cursor = nextStart
-    let chorusSeconds = 0
-    chords.forEach((chord) => {
-      const chordSeconds = chord.beats * secondsPerBeat
-      const duration = Math.max(0.2, chordSeconds * 0.82)
-      chord.midi.forEach((note) => scheduleNote(ctx, note, cursor, duration, 0.11))
-      cursor += chordSeconds
-      chorusSeconds += chordSeconds
-    })
+    scheduleEvents(ctx, performance, nextStart, secondsPerBeat)
+    const chorusSeconds = performance.totalBeats * secondsPerBeat
 
     nextStart += chorusSeconds
     loopTimer = window.setTimeout(scheduleChorus, Math.max(60, (chorusSeconds - 0.4) * 1000))
   }
 
   scheduleChorus()
-}
-
-export async function playSequence(chords: TimedChord[], tempo: number): Promise<void> {
-  const ctx = getAudioContext()
-  if (ctx.state === 'suspended') await ctx.resume()
-  const secondsPerBeat = 60 / tempo
-  let cursor = ctx.currentTime + 0.06
-  chords.forEach((chord) => {
-    const chordSeconds = chord.beats * secondsPerBeat
-    const duration = Math.max(0.2, chordSeconds * 0.82)
-    chord.midi.forEach((note) => scheduleNote(ctx, note, cursor, duration, 0.11))
-    cursor += chordSeconds
-  })
 }

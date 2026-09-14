@@ -1,10 +1,31 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { playChord, playSequence, startLoop, stopPlayback } from './music/audio'
-import { downloadMidi } from './music/midi'
-import type { GeneratedVoicing, PlayContext } from './music/types'
+import { playChord, playPerformance, startPerformanceLoop, stopPlayback } from './music/render/audio'
+import { downloadMidi } from './music/render/midi'
+import { buildPerformance } from './music/perform'
+import type { GeneratedVoicing, PlayContext, Take } from './music/types'
 import { generateProgressionVoicings, RANGE_PRESETS } from './music/voicings'
 
 const DEFAULT_PROGRESSION = 'Dm7 G7 | Cmaj7 | A7alt'
+
+/**
+ * voicings.ts はまだ片手前提(GeneratedVoicing)のまま。Step2/3 で vocab + take.ts に
+ * 置き換わるまでの橋渡しとして、ここだけで Take へ変換する。
+ * 両手の区別が無いので、全音を左手側に積む(Powell 的な単手の扱い)。
+ */
+function toTake(voicings: GeneratedVoicing[]): Take {
+  return {
+    id: 'legacy-single-hand',
+    voicings: voicings.map((voicing) => ({
+      family: voicing.id,
+      label: voicing.label,
+      left: voicing.midi,
+      right: [],
+      degrees: voicing.degrees,
+    })),
+    chords: voicings.map((voicing) => voicing.chord),
+    score: 0,
+  }
+}
 
 function App() {
   const [progression, setProgression] = useState(DEFAULT_PROGRESSION)
@@ -56,12 +77,15 @@ function App() {
 
   const beginLoop = () => {
     setLooping(true)
-    startLoop(
+    startPerformanceLoop(
       (chorusIndex) => {
-        const take = generateProgressionVoicings(progression, liveRef.current.generateOptions)
-        setVoicings(take)
+        const nextVoicings = generateProgressionVoicings(progression, liveRef.current.generateOptions)
+        setVoicings(nextVoicings)
         setChorus(chorusIndex + 1)
-        return take.map((item) => ({ midi: item.midi, beats: item.chord.beats }))
+        return buildPerformance(toTake(nextVoicings), {
+          tempo: liveRef.current.tempo,
+          beatsPerBar: liveRef.current.generateOptions.beatsPerBar,
+        })
       },
       () => liveRef.current.tempo,
     )
@@ -224,12 +248,15 @@ function App() {
                 className="secondary"
                 onClick={() => {
                   stopLoop()
-                  playSequence(voicings.map((item) => ({ midi: item.midi, beats: item.chord.beats })), tempo)
+                  playPerformance(buildPerformance(toTake(voicings), { tempo, beatsPerBar }), tempo)
                 }}
               >
                 Play all
               </button>
-              <button className="primary" onClick={() => downloadMidi(voicings, tempo)}>
+              <button
+                className="primary"
+                onClick={() => downloadMidi(buildPerformance(toTake(voicings), { tempo, beatsPerBar }), tempo)}
+              >
                 Export MIDI
               </button>
             </div>

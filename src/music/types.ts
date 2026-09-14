@@ -61,3 +61,39 @@ export interface RangePreset {
   min: number
   max: number
 }
+
+export type TrackId = 'piano' | 'bass'
+export type Hand = 'left' | 'right'
+export type DensityPreset = 'powell' | 'shell3' | 'standard' | 'thick'
+
+/** 1つの和音の配置。左右の手を分けて持つ */
+export interface Voicing {
+  family: string          // vocab モジュールの id
+  label: string           // 画面表示用（日本語可）
+  left: number[]          // 左手の MIDI 番号。低い順
+  right: number[]         // 右手の MIDI 番号。低い順。Powell では空配列
+  degrees: string[]       // left.concat(right) と同じ並び・同じ長さ
+}
+
+/** 進行全体で確定した1テイク */
+export interface Take {
+  id: string
+  voicings: Voicing[]     // chords と同じ長さ・同じ並び
+  chords: ParsedChord[]
+  score: number           // 小さいほど良い。デバッグ表示用
+}
+
+/** 最終的な演奏イベント。ここがスウィングもベロシティも適用済みの唯一の真実 */
+export interface PerformanceEvent {
+  track: TrackId
+  midi: number
+  startBeat: number       // 曲頭からの位置（拍）。スウィング適用後
+  durationBeats: number
+  velocity: number        // 1–127
+}
+
+export interface Performance {
+  events: PerformanceEvent[]
+  totalBeats: number
+  take: Take
+}
