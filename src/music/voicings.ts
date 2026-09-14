@@ -14,7 +14,7 @@ import {
   parseProgression,
   spellChordDegree,
 } from './theory'
-import { DENSITY, RANGES } from './constants'
+import { DENSITY, RANGES, SEARCH } from './constants'
 import { isPlayable } from './playability'
 import { buildPowellVoicings } from './vocab/powell'
 import { buildRootlessVoicings } from './vocab/rootless'
@@ -194,12 +194,13 @@ export function voicingDistance(previous: number[], next: number[]): number {
   return total
 }
 
-function weightedChoice<T>(items: T[], scores: number[], randomness: number): T {
+/** randomness=0では必ず最小スコアを返す(take.test.tsが決定性として検証する)。 */
+export function weightedChoice<T>(items: T[], scores: number[], randomness: number): T {
   if (items.length === 1) return items[0]
   if (randomness <= 0.01) return items[scores.indexOf(Math.min(...scores))]
 
   const normalizedRandomness = Math.max(0, Math.min(1, randomness))
-  const temperature = 0.35 + normalizedRandomness * 7.5
+  const temperature = SEARCH.temperatureBase + normalizedRandomness * SEARCH.temperatureScale
   const minScore = Math.min(...scores)
   const weights = scores.map((score) => Math.exp(-(score - minScore) / temperature))
   const total = weights.reduce((sum, value) => sum + value, 0)
