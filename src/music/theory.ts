@@ -31,6 +31,11 @@ export const DEGREE_SEMITONES: Record<string, number> = {
   '#11': 18,
   'b13': 20,
   '13': 21,
+  // Bud Powell の R10 shell 用。3度をオクターブ上げただけでは10度にならない
+  // (buildAscendingIntervalsは同じ度数を単純に+12するだけなので'3'を2回使えない)。
+  // そのため専用の度数として持つ (docs/IMPLEMENTATION_PLAN.md §4)。
+  'b10': 15,
+  '10': 16,
 }
 
 const DEGREE_STEPS: Record<string, number> = {
@@ -51,6 +56,9 @@ const DEGREE_STEPS: Record<string, number> = {
   '#11': 3,
   'b13': 5,
   '13': 5,
+  // 綴りは3度と同じ文字(ルートから2文字分)を使う。オクターブはmidiToNoteName側で自然に出る。
+  'b10': 2,
+  '10': 2,
 }
 
 const LETTERS = ['C', 'D', 'E', 'F', 'G', 'A', 'B']

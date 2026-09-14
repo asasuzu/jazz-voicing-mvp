@@ -1,9 +1,11 @@
 import type {
   ChordQuality,
+  DensityPreset,
   GeneratedVoicing,
   ParsedChord,
   PlayContext,
   RangePreset,
+  Voicing,
   VoicingCandidate,
   VoicingTemplate,
 } from './types'
@@ -12,6 +14,10 @@ import {
   parseProgression,
   spellChordDegree,
 } from './theory'
+import { DENSITY, RANGES } from './constants'
+import { isPlayable } from './playability'
+import { buildPowellVoicings } from './vocab/powell'
+import { buildRootlessVoicings } from './vocab/rootless'
 
 export const RANGE_PRESETS: RangePreset[] = [
   { id: 'lh', label: '左手中心 A2–E5', min: 45, max: 76 },
@@ -252,4 +258,38 @@ export function generateProgressionVoicings(input: string, options: GenerateOpti
   }
 
   return result
+}
+
+// ---------------------------------------------------------------------------
+// ここから第2段階: 両手ボイシング(density対応)。「下部構造 × 上部構造」の
+// 組み立て自体は vocab/rootless.ts と vocab/powell.ts が担当し、ここは
+// densityに応じてどちらを使うかを振り分けて演奏可能性チェックをかけるだけ。
+// 上のRANGE_PRESETS/generateProgressionVoicingsは片手前提の旧UI用に残しており、
+// App.tsxがtake.ts経由の新しい流れへ切り替わるタイミングで整理する。
+// ---------------------------------------------------------------------------
+
+export interface VoicingRequest {
+  density: DensityPreset
+  withBass: boolean
+}
+
+function dedupeVoicings(voicings: Voicing[]): Voicing[] {
+  const seen = new Set<string>()
+  return voicings.filter((voicing) => {
+    const key = `${voicing.left.join('.')}|${voicing.right.join('.')}`
+    if (seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
+}
+
+export function generateVoicingsForChord(chord: ParsedChord, request: VoicingRequest): Voicing[] {
+  const config = DENSITY[request.density]
+
+  const raw =
+    request.density === 'powell' || request.density === 'shell3'
+      ? buildPowellVoicings(chord, request.density)
+      : buildRootlessVoicings(chord, config.leftHandRange, RANGES.rightHandDefault, config.totalNotes)
+
+  return dedupeVoicings(raw).filter(isPlayable)
 }
