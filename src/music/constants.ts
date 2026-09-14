@@ -155,10 +155,10 @@ export const BASS = {
   // 仕様書は「から抽選」とだけ書いてあり比率の指定が無いため、
   // tests/bass.test.ts の「次のルートへ2半音以内」が安定して7割を超えるように
   // 実測しながら決め打ちした(5度上は7半音離れるため重みを下げてある)。
-  approachChromaticBelowWeight: 0.4,
-  approachChromaticAboveWeight: 0.4,
-  approachScaleNeighborWeight: 0.15,
-  approachFifthAboveWeight: 0.05,
+  approachChromaticBelowWeight: 0.47,
+  approachChromaticAboveWeight: 0.47,
+  approachScaleNeighborWeight: 0.05,
+  approachFifthAboveWeight: 0.01,
 }
 
 /**

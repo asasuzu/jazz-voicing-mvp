@@ -3,77 +3,55 @@ import { playChord, playPerformance, startPerformanceLoop, stopPlayback } from '
 import { downloadMidi } from './music/render/midi'
 import { buildPerformance } from './music/perform'
 import type { PerformOptions } from './music/perform'
-import type { GeneratedVoicing, PlayContext, Take } from './music/types'
-import { generateProgressionVoicings, RANGE_PRESETS } from './music/voicings'
+import type { SwingSetting } from './music/humanize'
+import { generateTakes } from './music/take'
+import { spellChordDegree } from './music/theory'
+import { voicingDistance } from './music/voicings'
+import type { DensityPreset, Take, Voicing } from './music/types'
 
 const DEFAULT_PROGRESSION = 'Dm7 G7 | Cmaj7 | A7alt'
 
-/**
- * voicings.ts はまだ片手前提(GeneratedVoicing)のまま。Step2/3 で vocab + take.ts に
- * 置き換わるまでの橋渡しとして、ここだけで Take へ変換する。
- * 両手の区別が無いので、全音を左手側に積む(Powell 的な単手の扱い)。
- */
-/**
- * toTake()経由のレガシー経路(片手前提)用の暫定PerformOptions。
- * densityベースのUI(Step5)に置き換わるまでの橋渡しなので、strict(揺れ無し)で
- * ベース無しにしておく。comping/humanizeの本実装が入ったことで、Step1時点の
- * 「ブロックコードのまま」という前提はここでは維持されない(Step4で意図的に変わる)。
- */
-function legacyPerformOptions(tempo: number, beatsPerBar: number): PerformOptions {
-  return {
-    tempo,
-    beatsPerBar,
-    withBass: false,
-    strict: true,
-    swing: 'auto',
-    density: 'standard',
-    choruses: 1,
-  }
-}
-
-function toTake(voicings: GeneratedVoicing[]): Take {
-  return {
-    id: 'legacy-single-hand',
-    voicings: voicings.map((voicing) => ({
-      family: voicing.id,
-      label: voicing.label,
-      left: voicing.midi,
-      right: [],
-      degrees: voicing.degrees,
-    })),
-    chords: voicings.map((voicing) => voicing.chord),
-    score: 0,
-  }
-}
+const DENSITY_OPTIONS: { id: DensityPreset; label: string }[] = [
+  { id: 'powell', label: 'Powell · 2音、右手を空ける' },
+  { id: 'shell3', label: 'シェル+ · 3音' },
+  { id: 'standard', label: '標準 · 4〜5音' },
+  { id: 'thick', label: '厚め · 5〜7音(既定)' },
+]
 
 function App() {
   const [progression, setProgression] = useState(DEFAULT_PROGRESSION)
-  const [context, setContext] = useState<PlayContext>('combo')
-  const [rangeId, setRangeId] = useState('lh')
-  const [colorful, setColorful] = useState(true)
+  const [density, setDensity] = useState<DensityPreset>('thick')
+  const [withBass, setWithBass] = useState(true)
+  const [strict, setStrict] = useState(false)
+  const [swingMode, setSwingMode] = useState<'auto' | 'manual'>('auto')
+  const [swingAmount, setSwingAmount] = useState(70) // 手動時のみ使う。0=イーブン, 100=最大
   const [randomness, setRandomness] = useState(0.38)
+  const [topLineWeight, setTopLineWeight] = useState(0.6)
   const [tempo, setTempo] = useState(180)
   const [beatsPerBar, setBeatsPerBar] = useState(4)
-  const [voicings, setVoicings] = useState<GeneratedVoicing[]>([])
+  const [choruses, setChoruses] = useState(2)
+  const [take, setTake] = useState<Take | null>(null)
   const [error, setError] = useState('')
   const [looping, setLooping] = useState(false)
   const [chorus, setChorus] = useState(0)
 
-  const selectedRange = useMemo(
-    () => RANGE_PRESETS.find((range) => range.id === rangeId) ?? RANGE_PRESETS[0],
-    [rangeId],
-  )
+  const swing: SwingSetting = swingMode === 'auto' ? 'auto' : swingAmount
 
   const generateOptions = useMemo(
-    () => ({ context, range: selectedRange, colorful, randomness, beatsPerBar }),
-    [context, selectedRange, colorful, randomness, beatsPerBar],
+    () => ({ density, randomness, topLineWeight, beatsPerBar, withBass }),
+    [density, randomness, topLineWeight, beatsPerBar, withBass],
+  )
+
+  const performOptions: PerformOptions = useMemo(
+    () => ({ tempo, beatsPerBar, withBass, strict, swing, density, choruses }),
+    [tempo, beatsPerBar, withBass, strict, swing, density, choruses],
   )
 
   // ループ再生中にテンポ/設定を動かしても次のコーラスから反映させる
-  const liveRef = useRef({ tempo, generateOptions })
+  const liveRef = useRef({ generateOptions, performOptions })
   useEffect(() => {
-    liveRef.current = { tempo, generateOptions }
-  }, [tempo, generateOptions])
+    liveRef.current = { generateOptions, performOptions }
+  }, [generateOptions, performOptions])
 
   const changeTempo = (value: number) => setTempo(Math.min(300, Math.max(40, Math.round(value))))
 
@@ -81,10 +59,10 @@ function App() {
     stopLoop()
     try {
       setError('')
-      const next = generateProgressionVoicings(progression, generateOptions)
-      setVoicings(next)
+      const [next] = generateTakes(progression, generateOptions)
+      setTake(next)
     } catch (caught) {
-      setVoicings([])
+      setTake(null)
       setError(caught instanceof Error ? caught.message : '生成に失敗しました。')
     }
   }
@@ -98,33 +76,42 @@ function App() {
     setLooping(true)
     startPerformanceLoop(
       (chorusIndex) => {
-        const nextVoicings = generateProgressionVoicings(progression, liveRef.current.generateOptions)
-        setVoicings(nextVoicings)
+        const [nextTake] = generateTakes(progression, liveRef.current.generateOptions)
+        setTake(nextTake)
         setChorus(chorusIndex + 1)
-        return buildPerformance(
-          toTake(nextVoicings),
-          legacyPerformOptions(liveRef.current.tempo, liveRef.current.generateOptions.beatsPerBar),
-        )
+        // ループ再生自体が周回を担うので、書き出し用の「コーラス数」はここでは1固定にする
+        return buildPerformance(nextTake, { ...liveRef.current.performOptions, choruses: 1 })
       },
-      () => liveRef.current.tempo,
+      () => liveRef.current.performOptions.tempo,
     )
   }
 
-  const barsOf = (items: GeneratedVoicing[]) => {
-    const bars: { voicing: GeneratedVoicing; index: number }[][] = []
-    items.forEach((voicing, index) => {
+  const barsOf = (currentTake: Take) => {
+    const bars: { voicing: Voicing; chordIndex: number }[][] = []
+    currentTake.voicings.forEach((voicing, chordIndex) => {
       const bar = bars[bars.length - 1]
-      if (bar && bar[0].voicing.chord.barIndex === voicing.chord.barIndex) {
-        bar.push({ voicing, index })
+      if (bar && currentTake.chords[bar[0].chordIndex].barIndex === currentTake.chords[chordIndex].barIndex) {
+        bar.push({ voicing, chordIndex })
       } else {
-        bars.push([{ voicing, index }])
+        bars.push([{ voicing, chordIndex }])
       }
     })
     return bars
   }
 
-  const movementLabel = (movement?: number) => {
-    if (movement === undefined) return 'start'
+  const noteNamesFor = (currentTake: Take, chordIndex: number, hand: 'left' | 'right') => {
+    const voicing = currentTake.voicings[chordIndex]
+    const chord = currentTake.chords[chordIndex]
+    const notes = hand === 'left' ? voicing.left : voicing.right
+    const degreeOffset = hand === 'left' ? 0 : voicing.left.length
+    return notes.map((midi, i) => spellChordDegree(chord, voicing.degrees[degreeOffset + i], midi))
+  }
+
+  const movementLabel = (currentTake: Take, chordIndex: number) => {
+    if (chordIndex === 0) return 'start'
+    const prev = currentTake.voicings[chordIndex - 1]
+    const curr = currentTake.voicings[chordIndex]
+    const movement = voicingDistance([...prev.left, ...prev.right], [...curr.left, ...curr.right])
     if (movement <= 6) return `move ${movement} · very smooth`
     if (movement <= 12) return `move ${movement} · smooth`
     return `move ${movement}`
@@ -133,11 +120,11 @@ function App() {
   return (
     <main className="shell">
       <header className="hero">
-        <div className="eyebrow">JAZZ VOICING LAB · MVP 0.1</div>
-        <h1>Chord symbols in.<br />Playable voicings out.</h1>
+        <div className="eyebrow">JAZZ VOICING LAB · v0.2</div>
+        <h1>Chord symbols in.<br />A trio comping track out.</h1>
         <p>
-          実用的なテンプレートから候補を作り、ボイスリーディングを考慮しつつランダムに選びます。
-          ブラウザで試聴して、そのままMIDIへ。
+          両手コンピングとウォーキングベースを、進行全体を見るビームサーチで組み立てます。
+          ブラウザで試聴して、スウィングとベロシティの揺れが乗ったマルチトラックMIDIへ。
         </p>
       </header>
 
@@ -191,18 +178,10 @@ function App() {
 
         <div className="control-grid">
           <label className="field">
-            <span>Situation</span>
-            <select value={context} onChange={(event) => setContext(event.target.value as PlayContext)}>
-              <option value="combo">Bassあり · rootless中心</option>
-              <option value="solo">Solo piano · root入り</option>
-            </select>
-          </label>
-
-          <label className="field">
-            <span>Register</span>
-            <select value={rangeId} onChange={(event) => setRangeId(event.target.value)}>
-              {RANGE_PRESETS.map((range) => (
-                <option key={range.id} value={range.id}>{range.label}</option>
+            <span>厚さ(Density)</span>
+            <select value={density} onChange={(event) => setDensity(event.target.value as DensityPreset)}>
+              {DENSITY_OPTIONS.map((option) => (
+                <option key={option.id} value={option.id}>{option.label}</option>
               ))}
             </select>
           </label>
@@ -215,14 +194,57 @@ function App() {
               <option value={6}>6拍子</option>
             </select>
           </label>
+
+          <label className="field">
+            <span>コーラス数(書き出し用)</span>
+            <input
+              type="number"
+              min={1}
+              max={8}
+              value={choruses}
+              onChange={(event) => setChoruses(Math.min(8, Math.max(1, Number(event.target.value) || 1)))}
+            />
+            <small>MIDI書き出し時に、この回数ぶんリズムを引き直して連結します。</small>
+          </label>
         </div>
 
         <div className="switch-row">
           <label className="check">
-            <input type="checkbox" checked={colorful} onChange={(event) => setColorful(event.target.checked)} />
-            <span>Spread / 11th などの色付き候補も混ぜる</span>
+            <input type="checkbox" checked={withBass} onChange={(event) => setWithBass(event.target.checked)} />
+            <span>ウォーキングベースを別トラックで鳴らす</span>
           </label>
 
+          <label className="check">
+            <input type="checkbox" checked={strict} onChange={(event) => setStrict(event.target.checked)} />
+            <span>きっちりモード(スウィング以外の揺れをOFF。打ち込みの下敷き用)</span>
+          </label>
+        </div>
+
+        <div className="switch-row">
+          <label className="field">
+            <span>スウィング</span>
+            <select value={swingMode} onChange={(event) => setSwingMode(event.target.value as 'auto' | 'manual')}>
+              <option value="auto">Auto(テンポに合わせて自動調整)</option>
+              <option value="manual">手動</option>
+            </select>
+          </label>
+
+          {swingMode === 'manual' && (
+            <label className="range-control">
+              <span>スウィング量 <strong>{swingAmount}%</strong></span>
+              <input
+                type="range"
+                min={0}
+                max={100}
+                value={swingAmount}
+                onChange={(event) => setSwingAmount(Number(event.target.value))}
+              />
+              <small>0%はイーブン、100%が最も強いシャッフル感になります。</small>
+            </label>
+          )}
+        </div>
+
+        <div className="switch-row">
           <label className="range-control">
             <span>Randomness <strong>{Math.round(randomness * 100)}%</strong></span>
             <input
@@ -232,13 +254,25 @@ function App() {
               value={Math.round(randomness * 100)}
               onChange={(event) => setRandomness(Number(event.target.value) / 100)}
             />
-            <small>0%は滑らかさ優先、100%ほど候補の幅を広げます。</small>
+            <small>0%はビームサーチの最良経路、100%ほど候補の幅を広げます。</small>
+          </label>
+
+          <label className="range-control">
+            <span>トップラインの強さ <strong>{topLineWeight.toFixed(2)}</strong></span>
+            <input
+              type="range"
+              min={0}
+              max={150}
+              value={Math.round(topLineWeight * 100)}
+              onChange={(event) => setTopLineWeight(Number(event.target.value) / 100)}
+            />
+            <small>上げるほど、一番上の音が3〜4半音で滑らかに動くテイクが選ばれやすくなります。</small>
           </label>
         </div>
 
         <div className="action-row">
-          <button className="primary" onClick={generate}>Generate voicings</button>
-          {voicings.length > 0 && (
+          <button className="primary" onClick={generate}>Generate take</button>
+          {take && (
             <button className="secondary" onClick={generate}>Another take</button>
           )}
         </div>
@@ -246,11 +280,11 @@ function App() {
         {error && <div className="error">{error}</div>}
       </section>
 
-      {voicings.length > 0 && (
+      {take && (
         <section className="results">
           <div className="results-head">
             <div>
-              <div className="eyebrow">GENERATED TAKE</div>
+              <div className="eyebrow">GENERATED TAKE · {DENSITY_OPTIONS.find((option) => option.id === density)?.label}</div>
               <h2>Voicing path</h2>
             </div>
             <div className="action-row compact">
@@ -267,40 +301,62 @@ function App() {
                 className="secondary"
                 onClick={() => {
                   stopLoop()
-                  playPerformance(buildPerformance(toTake(voicings), legacyPerformOptions(tempo, beatsPerBar)), tempo)
+                  playPerformance(buildPerformance(take, { ...performOptions, choruses: 1 }), tempo)
                 }}
               >
                 Play all
               </button>
               <button
                 className="primary"
-                onClick={() => downloadMidi(buildPerformance(toTake(voicings), legacyPerformOptions(tempo, beatsPerBar)), tempo)}
+                onClick={() => downloadMidi(buildPerformance(take, performOptions), tempo, beatsPerBar)}
               >
                 Export MIDI
               </button>
             </div>
           </div>
 
-          {barsOf(voicings).map((bar, barPosition) => (
-            <div className="bar-row" key={bar[0].voicing.chord.barIndex}>
+          {barsOf(take).map((bar, barPosition) => (
+            <div className="bar-row" key={take.chords[bar[0].chordIndex].barIndex}>
               <div className="bar-label">小節 {barPosition + 1}</div>
               <div className="voicing-grid">
-                {bar.map(({ voicing, index }) => (
-                  <article className="voicing-card" key={`${voicing.id}-${index}`}>
+                {bar.map(({ voicing, chordIndex }) => (
+                  <article className="voicing-card" key={`${take.id}-${chordIndex}`}>
                     <div className="card-topline">
-                      <span className="index">{String(index + 1).padStart(2, '0')}</span>
-                      <span className="movement">{movementLabel(voicing.movementFromPrevious)}</span>
+                      <span className="index">{String(chordIndex + 1).padStart(2, '0')}</span>
+                      <span className="movement">{movementLabel(take, chordIndex)}</span>
                     </div>
-                    <h3>{voicing.chord.symbol}</h3>
+                    <h3>{take.chords[chordIndex].symbol}</h3>
                     <div className="family">
                       {voicing.label}
-                      {bar.length > 1 && <span className="beats"> · {voicing.chord.beats}拍</span>}
+                      {bar.length > 1 && <span className="beats"> · {take.chords[chordIndex].beats}拍</span>}
                     </div>
-                    <div className="notes">
-                      {voicing.noteNames.map((note) => <span key={note}>{note}</span>)}
-                    </div>
+                    {voicing.left.length > 0 && (
+                      <>
+                        <div className="degrees">左手</div>
+                        <div className="notes">
+                          {noteNamesFor(take, chordIndex, 'left').map((note, i) => (
+                            <span key={`${note}-${i}`}>{note}</span>
+                          ))}
+                        </div>
+                      </>
+                    )}
+                    {voicing.right.length > 0 && (
+                      <>
+                        <div className="degrees">右手</div>
+                        <div className="notes">
+                          {noteNamesFor(take, chordIndex, 'right').map((note, i) => (
+                            <span key={`${note}-${i}`}>{note}</span>
+                          ))}
+                        </div>
+                      </>
+                    )}
                     <div className="degrees">{voicing.degrees.join(' · ')}</div>
-                    <button className="play-one" onClick={() => playChord(voicing.midi)}>Play chord</button>
+                    <button
+                      className="play-one"
+                      onClick={() => playChord([...voicing.left, ...voicing.right])}
+                    >
+                      Play chord
+                    </button>
                   </article>
                 ))}
               </div>
@@ -308,15 +364,15 @@ function App() {
           ))}
 
           <div className="note">
-            Loop playは進行を繰り返し再生し、1周ごとにボイシングを選び直します。同じ進行でも毎周ちがう響きになります。
+            Loop playは進行を繰り返し再生し、1周ごとにテイクとリズムを選び直します。同じ進行でも毎周ちがう響きになります。
             スマホで鳴らないときは、本体の消音スイッチ(マナーモード)と音量を確認してください。
-            Preview音はブラウザ内蔵の簡易シンセです。書き出すMIDIは音声ではなく演奏情報なので、DAW側で好きなピアノ音源を割り当てられます。
+            Preview音はブラウザ内蔵の簡易シンセです。書き出すMIDIは音声ではなく演奏情報なので、DAW側で好きなピアノ/ベース音源を割り当てられます。
           </div>
         </section>
       )}
 
       <footer>
-        <span>Prototype assumptions: 4-note voicings / practical jazz-piano vocabulary / static web app</span>
+        <span>Phase1: two-hand voicings / walking bass / comping rhythm / swing &amp; velocity / multitrack MIDI export</span>
       </footer>
     </main>
   )
