@@ -98,6 +98,20 @@ export const TIMING = {
   bassJitterTicks: 5,
   /** 和音内で下から順にずらす量(tick)。完全同時を避ける */
   chordSpreadTicks: 6,
+  /**
+   * ループ再生スケジューラ(render/audio.ts の startPerformanceLoop)用。
+   * FEEDBACK_01.md §3: 次のscheduleChorus呼び出しを「chorusSeconds - lookahead」秒後に
+   * 固定で仕掛けていたが、nextStartは毎周chorusSeconds分だけ進む一方、実時間は
+   * (chorusSeconds - lookahead)分しか進まないため、両者の差が毎周lookahead秒ずつ
+   * 際限なく開いていくバグがあった(実測: 260BPM/3小節ループで約0.4秒/周ずつ増加)。
+   * 音自体はズレないが、鳴らされていないOscillatorNodeが周を追うごとに積み上がり、
+   * 「何周かしてから重くなって変になる」の原因になっていた。
+   * 対策: 次回呼び出しの遅延は毎回「実際に残っている先読み時間」から逆算する。
+   */
+  loopInitialLeadSeconds: 0.08, // 再生開始直後の最初の余白
+  loopLookaheadSeconds: 0.4,    // 定常状態で維持したい先読み時間
+  loopMinLookaheadSeconds: 0.05, // nextStartの下限クランプ(過去に予約されるのを防ぐ)
+  loopMinTimerMs: 60,            // setTimeoutの遅延がこれより短くならないようにする
 }
 
 // ---------------------------------------------------------------------------
