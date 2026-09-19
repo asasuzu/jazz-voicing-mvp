@@ -1,4 +1,4 @@
-import { AUDIO } from '../constants'
+import { AUDIO, TIMING } from '../constants'
 import type { Performance } from '../types'
 
 let audioContext: AudioContext | null = null
@@ -105,6 +105,36 @@ export async function playPerformance(performance: Performance, tempo: number): 
 }
 
 /**
+ * nextStart(次のコーラスの開始時刻)が現在時刻より過去にならないようにする下限クランプ。
+ * FEEDBACK_01.md §3 で疑われていた「タイマーが遅れてnextStartが過去になる」ケースへの
+ * 保険。AudioContextに依存しない純粋関数にして tests/loop.test.ts から検証できるようにする。
+ */
+export function clampChorusStart(nextStart: number, currentTime: number, minLookahead: number): number {
+  return Math.max(nextStart, currentTime + minLookahead)
+}
+
+/**
+ * 次にscheduleChorusを呼び直すまでの待ち時間(ms)を、実際に残っている先読み時間から逆算する。
+ *
+ * 元の実装は `chorusSeconds - lookahead` を待ち時間に使っていた。nextStartは1周ごとに
+ * chorusSeconds分だけ進むのに、実時間は待ち時間の分(chorusSeconds - lookahead)しか
+ * 進まないため、両者の差が1周ごとにlookahead秒ずつ際限なく開いていく
+ * (実測で確認: FEEDBACK_01.md §3 の調査結果を参照)。音の開始時刻自体はズレないが、
+ * 実際に鳴るよりずっと先の分まで毎周オシレーターを作り続けることになり、蓄積した
+ * 未再生のOscillatorNodeが「何周かしてから重くなって変になる」の原因になっていた。
+ * 現在時刻を毎回読み直して逆算すれば、定常状態でのnextStartとcurrentTimeの差は
+ * lookahead秒あたりで安定し、際限なく開いていかない。
+ */
+export function computeScheduleDelayMs(
+  nextStart: number,
+  currentTime: number,
+  lookahead: number,
+  minDelayMs: number,
+): number {
+  return Math.max(minDelayMs, (nextStart - currentTime - lookahead) * 1000)
+}
+
+/**
  * 各コーラスの直前に buildChorus を呼ぶので、1周ごとに違う Performance を差し込める。
  */
 export async function startPerformanceLoop(
@@ -117,7 +147,7 @@ export async function startPerformanceLoop(
   looping = true
 
   let chorusIndex = 0
-  let nextStart = ctx.currentTime + 0.08
+  let nextStart = ctx.currentTime + TIMING.loopInitialLeadSeconds
 
   const scheduleChorus = () => {
     if (!looping) return
@@ -126,11 +156,15 @@ export async function startPerformanceLoop(
     const performance = buildChorus(chorusIndex)
     chorusIndex += 1
 
-    scheduleEvents(ctx, performance, nextStart, secondsPerBeat)
+    // 仮説どおり、buildChorus(ビームサーチ含む)に時間がかかってnextStartを
+    // 追い越してしまう可能性への保険として下限クランプを入れる。
+    const scheduledStart = clampChorusStart(nextStart, ctx.currentTime, TIMING.loopMinLookaheadSeconds)
+    scheduleEvents(ctx, performance, scheduledStart, secondsPerBeat)
     const chorusSeconds = performance.totalBeats * secondsPerBeat
 
-    nextStart += chorusSeconds
-    loopTimer = window.setTimeout(scheduleChorus, Math.max(60, (chorusSeconds - 0.4) * 1000))
+    nextStart = scheduledStart + chorusSeconds
+    const delayMs = computeScheduleDelayMs(nextStart, ctx.currentTime, TIMING.loopLookaheadSeconds, TIMING.loopMinTimerMs)
+    loopTimer = window.setTimeout(scheduleChorus, delayMs)
   }
 
   scheduleChorus()

@@ -112,6 +112,20 @@ export const TIMING = {
   bassJitterTicks: 5,
   /** 和音内で下から順にずらす量(tick)。完全同時を避ける */
   chordSpreadTicks: 6,
+  /**
+   * ループ再生スケジューラ(render/audio.ts の startPerformanceLoop)用。
+   * FEEDBACK_01.md §3: 次のscheduleChorus呼び出しを「chorusSeconds - lookahead」秒後に
+   * 固定で仕掛けていたが、nextStartは毎周chorusSeconds分だけ進む一方、実時間は
+   * (chorusSeconds - lookahead)分しか進まないため、両者の差が毎周lookahead秒ずつ
+   * 際限なく開いていくバグがあった(実測: 260BPM/3小節ループで約0.4秒/周ずつ増加)。
+   * 音自体はズレないが、鳴らされていないOscillatorNodeが周を追うごとに積み上がり、
+   * 「何周かしてから重くなって変になる」の原因になっていた。
+   * 対策: 次回呼び出しの遅延は毎回「実際に残っている先読み時間」から逆算する。
+   */
+  loopInitialLeadSeconds: 0.08, // 再生開始直後の最初の余白
+  loopLookaheadSeconds: 0.4,    // 定常状態で維持したい先読み時間
+  loopMinLookaheadSeconds: 0.05, // nextStartの下限クランプ(過去に予約されるのを防ぐ)
+  loopMinTimerMs: 60,            // setTimeoutの遅延がこれより短くならないようにする
 }
 
 // ---------------------------------------------------------------------------
@@ -175,6 +189,41 @@ export const BASS = {
   approachChromaticAboveWeight: 0.2,
   approachScaleNeighborWeight: 0.3,
   approachFifthAboveWeight: 0.2,
+
+  // ---------------------------------------------------------------------
+  // ここから docs/FEEDBACK_01.md §1(「ベースが歩けていない」)への対応。
+  // 「逆にかっこいい」は皮肉で、実用に耐えないという深刻な指摘だったため
+  // 作り直した。決めたことの1〜6にそれぞれ対応する定数。
+  // ---------------------------------------------------------------------
+
+  /** 1. 中間拍は直前の音から±この半音数以内に候補を絞る。フィードバックの指摘どおり
+   * 「近い順に並べて1/(i+1)で抽選」では最も近い音が37%しか選ばれず飛び回っていた。 */
+  middleStepMaxDistance: 4,
+  /** 中間拍の重みづけ: weight = decay^distance。距離0(直前と同度数感)が最優先になるよう
+   * 急峻にする。0.35を1回かけるごとに重みが1/3弱になる決め打ち(仕様書に式の指定は無い)。 */
+  middleStepWeightDecay: 0.35,
+
+  /** 2. 3拍目(もう1つの強拍)はコードトーンのみ。スケール音は2・4拍目に回す。 */
+  // (フラグの持ち方は bass.ts 側のforceChordTone引数で表現するため、値はここには無い)
+
+  /** 3. 1小節2コードのとき、最後の拍を毎回アプローチ音にはしない。この確率でだけ
+   * アプローチ音にし、残りはコードトーンにする(仕様書「確率0.6程度」)。 */
+  twoChordBarApproachProbability: 0.6,
+
+  /** 4. 音域を狭めて中心へ戻す弱いバイアス。walkingの実用域として仕様書が挙げた
+   * E1(28)〜E3(52)を「好ましい範囲」とし、そこから外れた分だけ軽いペナルティを足す。 */
+  preferredRangeMin: 28, // E1
+  preferredRangeMax: 52, // E3
+  /** 好ましい範囲から外れた半音1つあたりに足すペナルティの重み。「弱いバイアス」なので
+   * オクターブ違い(12半音)の距離差を逆転させない程度に小さくする。 */
+  centerBiasWeightPerSemitone: 0.15,
+
+  /** 5. 連続する2音の跳躍の上限(半音)。コードの頭でのみ例外を許す。 */
+  maxLeapSemitones: 5,
+
+  /** 6. コーラスの1小節目の1拍目は確率1.0でルート。それ以外の小節頭は現行どおり
+   * headRootWeightを使う。 */
+  firstBeatOfChorusRootProbability: 1.0,
 }
 
 /**
