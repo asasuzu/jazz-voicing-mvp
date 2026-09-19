@@ -71,6 +71,20 @@ export const TOP_LINE_PENALTY: { maxMove: number; penalty: number }[] = [
   { maxMove: 99, penalty: 2.5 },  // 跳躍しすぎ
 ]
 
+/**
+ * Powell語彙の選好。負の値ほど選ばれやすい。利用者から「全然バドっぽくない。
+ * 7度と10度をめっちゃ使うようにしてほしい」との指摘を受けて追加した
+ * (docs/FEEDBACK_01.md §2)。R3(近接の3度)は低い位置では Powell が避けた
+ * 響きなので控えめにする。
+ */
+export const POWELL_FAMILY_BIAS: Record<string, number> = {
+  'powell-r7': -1.2,
+  'powell-r10': -1.0,
+  'powell-r3': 0.4,
+  'powell-r6': 0.6,
+  'powell-shell3': -0.8,
+}
+
 export const SEARCH = {
   candidatesPerChord: 40,   // 各コードで残す候補の上限
   beamWidth: 24,

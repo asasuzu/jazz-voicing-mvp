@@ -1,4 +1,5 @@
-import { buildAscendingIntervals, DEGREE_SEMITONES } from '../theory'
+import { combinations, placeInRange } from './placement'
+import { DEGREE_SEMITONES } from '../theory'
 import type { ChordQuality, ParsedChord, Voicing } from '../types'
 
 /**
@@ -34,27 +35,12 @@ function alteredTensionPool(chord: ParsedChord): string[] | null {
 
   const ninths = alt ? ['b9', '#9'] : [sharp9 ? '#9' : flat9 ? 'b9' : '9']
   const upperTone = flat13 || alt ? 'b13' : sharp11 ? '#11' : '13'
-  // '5'はフィラー。altered系はninths+upperToneだけだと2〜3音しか無く、
-  // thick密度(5〜7音)の音数を確保できない場合があるため足した(仕様書に無い判断)。
-  return [...ninths, upperTone, '5']
-}
 
-function possibleRootMidis(rootPc: number): number[] {
-  const result: number[] = []
-  for (let midi = rootPc; midi < 120; midi += 12) result.push(midi)
-  return result
-}
-
-/** 度数列を、指定した音域にすべて収まる形でMIDI化する。収まる配置が無ければ空配列。 */
-function placeInRange(degrees: string[], rootPc: number, range: { min: number; max: number }): number[][] {
-  if (degrees.length === 0) return [[]]
-  const intervals = buildAscendingIntervals(degrees)
-  const results: number[][] = []
-  possibleRootMidis(rootPc).forEach((rootMidi) => {
-    const midi = intervals.map((interval) => rootMidi + interval)
-    if (midi[0] >= range.min && midi[midi.length - 1] <= range.max) results.push(midi)
-  })
-  return results
+  // 音数を確保するためのフィラー。altのときにナチュラル5度を足すと
+  // オルタードスケール(b9 #9 #11 b13)から外れて、altの響きでなくなる。
+  // altでは残りのオルタード音を、そうでなければ5度を足す。
+  const filler = alt ? (upperTone === 'b13' ? '#11' : 'b13') : '5'
+  return [...ninths, upperTone, filler]
 }
 
 function reversed<T>(items: T[]): T[] {
@@ -95,9 +81,16 @@ export function buildRootlessVoicings(
       const total = guideDegrees.length + rightSize
       if (total < totalNotes[0] || total > totalNotes[1]) continue
 
-      const rightDegreeOrders = rightSize === 0 ? [[]] : closePositionOrders(pool.slice(0, rightSize))
+      // プールの先頭N個だけを使うと、同じ色音の組み合わせしか出ない。
+      // 「G7の候補が1個しかない」状態の主因だったので、部分集合を全部試す
+      // (docs/FEEDBACK_01.md §5)。
+      const subsets = rightSize === 0 ? [[]] : combinations(pool, rightSize)
+      const rightDegreeOrders = subsets.flatMap((subset) =>
+        subset.length === 0 ? [[]] : closePositionOrders(subset),
+      )
 
       rightDegreeOrders.forEach((rightDegrees, rightOrderIndex) => {
+        if (new Set(rightDegrees).size !== rightDegrees.length) return
         const rightShapes = placeInRange(rightDegrees, chord.rootPc, rightHandRange)
 
         leftShapes.forEach((left) => {

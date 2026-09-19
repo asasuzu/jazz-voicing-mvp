@@ -1,4 +1,4 @@
-import { DENSITY, PLAYABILITY, RANGES, SCORE_WEIGHTS, TOP_LINE_PENALTY } from './constants'
+import { DENSITY, PLAYABILITY, POWELL_FAMILY_BIAS, RANGES, SCORE_WEIGHTS, TOP_LINE_PENALTY } from './constants'
 import { span } from './playability'
 import type { DensityPreset, Voicing } from './types'
 import { voicingDistance } from './voicings'
@@ -97,12 +97,26 @@ export function score(prev: Voicing | null, curr: Voicing, context: ScoreContext
 
   const voiceLeadingTerm = SCORE_WEIGHTS.voiceLeading * voicingDistance(allNotes(prev), allNotes(curr))
   const topLineTerm = context.topLineWeight * topLinePenalty(prev, curr)
-  const varietyTerm = SCORE_WEIGHTS.familyVariety * varietyPenalty(context.recentFamilies, curr.family)
+  // Powellは同じ型を繰り返すのが様式そのものなので、多様性の減点を外す。
+  // 汎用のスコアをそのまま当てていたのが「バドっぽくない」の原因だった
+  // (docs/FEEDBACK_01.md §2)。代わりに R7 / R10 を優先する重みを効かせる。
+  const isPowellStyle = context.density === 'powell' || context.density === 'shell3'
+  const varietyTerm = isPowellStyle
+    ? 0
+    : SCORE_WEIGHTS.familyVariety * varietyPenalty(context.recentFamilies, curr.family)
+  const familyBiasTerm = isPowellStyle ? (POWELL_FAMILY_BIAS[curr.family] ?? 0) : 0
   const stabilityTerm = SCORE_WEIGHTS.noteCountStability * Math.abs(noteCount(curr) - context.targetNoteCount)
   const commonToneTerm = SCORE_WEIGHTS.commonTone * commonToneCount(prev, curr)
 
   return (
-    voiceLeadingTerm + topLineTerm + registerTerm + varietyTerm + stabilityTerm + wideSpanTerm - commonToneTerm
+    voiceLeadingTerm +
+    topLineTerm +
+    registerTerm +
+    varietyTerm +
+    familyBiasTerm +
+    stabilityTerm +
+    wideSpanTerm -
+    commonToneTerm
   )
 }
 

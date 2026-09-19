@@ -1,7 +1,9 @@
-import type { DensityPreset, ParsedChord, Voicing } from './types'
+import type { ChordQuality, DensityPreset, ParsedChord, Voicing } from './types'
 import { DENSITY, RANGES, SEARCH } from './constants'
 import { isPlayable } from './playability'
 import { buildPowellVoicings } from './vocab/powell'
+import { buildQuartalVoicings } from './vocab/quartal'
+import { buildUpperStructureVoicings } from './vocab/upperStructure'
 import { buildRootlessVoicings } from './vocab/rootless'
 
 /**
@@ -57,13 +59,54 @@ function dedupeVoicings(voicings: Voicing[]): Voicing[] {
   })
 }
 
+/**
+ * コードを決定づける音（ルートからの半音）。どれか1組を満たしていれば合格。
+ *
+ * 4度堆積は響きが曖昧なので、そのままだと「3度も7度も無いが音域には収まる」
+ * 候補が通ってしまう。実際に Dm7 / G7 / Cmaj7 が同じ音の積みになり、G7 が
+ * G7 に聞こえない状態が出た。VOICING_RESEARCH.md §1 の「3度と7度を核にする」
+ * という原則は、方針として書いてあっただけでコードに入っていなかった。
+ *
+ * Powell は2音のシェルなので3度と7度を同時には持てない。ルートが下にあることで
+ * コードが成立する語彙なので、この判定の対象外にする。
+ */
+const DEFINING_TONES: Record<ChordQuality, number[][]> = {
+  major: [[4, 9], [4, 11]],
+  major7: [[4, 11], [4, 9]],
+  minor7: [[3, 10]],
+  dominant7: [[4, 10]],
+  halfDiminished: [[3, 10], [3, 6]],
+  diminished7: [[3, 9]],
+  minorMajor7: [[3, 11]],
+  sus7: [[5, 10]],
+}
+
+function hasDefiningTones(chord: ParsedChord, voicing: Voicing): boolean {
+  const present = new Set(
+    [...voicing.left, ...voicing.right].map((midi) => ((midi % 12) - chord.rootPc + 12) % 12),
+  )
+  return DEFINING_TONES[chord.quality].some((group) => group.every((offset) => present.has(offset)))
+}
+
 export function generateVoicingsForChord(chord: ParsedChord, request: VoicingRequest): Voicing[] {
   const config = DENSITY[request.density]
 
-  const raw =
-    request.density === 'powell' || request.density === 'shell3'
-      ? buildPowellVoicings(chord, request.density)
-      : buildRootlessVoicings(chord, config.leftHandRange, RANGES.rightHandDefault, config.totalNotes)
+  if (request.density === 'powell' || request.density === 'shell3') {
+    return dedupeVoicings(buildPowellVoicings(chord, request.density)).filter(isPlayable)
+  }
+
+  // 両手の語彙は足し合わせる。1つの語彙だけだと候補が数個しか出ず、
+  // ビームサーチに選ぶ余地が無くなる(docs/FEEDBACK_01.md §5)。
+  const overall = { min: config.leftHandRange.min, max: RANGES.rightHandDefault.max }
+  const raw = [
+    ...buildRootlessVoicings(chord, config.leftHandRange, RANGES.rightHandDefault, config.totalNotes),
+    ...buildUpperStructureVoicings(chord, config.leftHandRange, RANGES.rightHandDefault),
+    ...buildQuartalVoicings(chord, overall, config.totalNotes),
+  ].filter((voicing) => {
+    const total = voicing.left.length + voicing.right.length
+    if (total < config.totalNotes[0] || total > config.totalNotes[1]) return false
+    return hasDefiningTones(chord, voicing)
+  })
 
   return dedupeVoicings(raw).filter(isPlayable)
 }

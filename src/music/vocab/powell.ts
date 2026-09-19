@@ -49,7 +49,9 @@ function seventhDegree(quality: ChordQuality): string | null {
   return null
 }
 
-const SIXTH_QUALITIES: ChordQuality[] = ['major', 'major7', 'minor7'] // minor7はm6として使う
+// R6はトニックのメジャー系のみ。minor7に当てると Dm7 が D+B になり、
+// コードを決める b7 が消えて Dm6 の響きになる(docs/FEEDBACK_01.md §4)。
+const SIXTH_QUALITIES: ChordQuality[] = ['major', 'major7']
 
 function buildDiminished(rootMidi: number, variant: 'powell' | 'shell3'): Voicing[] {
   if (variant === 'powell') {
