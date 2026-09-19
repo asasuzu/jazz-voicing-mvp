@@ -160,3 +160,45 @@ Sources:
   https://www.britannica.com/biography/Bud-Powell
 - New World Encyclopedia, Bud Powell
   https://www.newworldencyclopedia.org/entry/Bud_Powell
+
+## 9. Upper Structure Triad と Quartal（第2段階で追加した語彙）
+
+「G7の候補が1個しかない」問題（[FEEDBACK_01.md §5](FEEDBACK_01.md)）を解くために追加した語彙の根拠。
+
+### 9.1 Upper Structure Triad
+
+左手に3度と7度（ドミナントでは三全音）、右手にトライアドを置く。どのトライアドを置くかで、鳴るテンションが決まる。
+
+ドミナントの表は The Jazz Piano Site の記載をそのまま実装した。
+
+| US | トライアド | 鳴るテンション |
+| --- | --- | --- |
+| US II | II major | 9 #11 13 |
+| US bIII | bIII major | #9 5 b7 |
+| US bV | bV major | b9 #11 b7 |
+| US bVI | bVI major | b13 1 #9 |
+| US VI | VI major | 13 b9 3 |
+| US Im | i minor | 1 #9 5 |
+| US bIIm | bII minor | b9 3 b13 |
+| US bIIIm | bIII minor | #9 #11 b7 |
+| US #IVm | #IV minor | #11 13 b9 |
+
+**`alt` のときの絞り込み**: オルタードスケールは b9 #9 #11 b13 なので、ナチュラルの5度・9度・13度を含むUSTは除外する。この表のうち US #IVm はナチュラル13度を含むため、`A7alt` には使わない。「b9と#11を含むもの」という条件だけで絞ると通ってしまうので注意。
+
+major7 / minor7 のUSTは出典の表に無いため、コードスケール（Ionian / Dorian）に収まるものをこちらで選んだ。**テンションを足さない組み合わせ（minor7のUS bIII = b3-5-b7 など）は、音を重ねるだけで色が増えないので入れていない。**
+
+### 9.2 Quartal と So What
+
+4度で積むと、3度堆積とは別の曖昧な色が出る。So What は Bill Evans が Miles Davis の "So What" で使った形で、下から4度を3回積んで最後だけ長3度を乗せる `1-11-b7-b3-5`。ベースがルートを弾く場合はルートを抜いた4音でも使える。
+
+**実装で分かった落とし穴**: 4度堆積は響きが曖昧なので、何も制約しないと「音域には収まるが3度も7度も無い」候補が通る。実際に `Dm7 / G7 / Cmaj7` がまったく同じ音の積みになり、G7 が G7 に聞こえない状態が出た。3コードとも同じ親スケール（Cメジャー）に属するため、スケールから積むだけでは区別が付かない。
+
+§1 の「3度と7度を核にする」は方針として書いてあっただけでコードに入っていなかった。両手の語彙には**コードを決定づける音（ドミナントなら3度と7度＝三全音）を必ず含む**という判定を入れてある。Powell の2音シェルは、ルートが最低音にあることで成立する語彙なので、この判定の対象外。
+
+Sources:
+- The Jazz Piano Site, Upper Structures
+  https://www.thejazzpianosite.com/jazz-piano-lessons/jazz-chord-voicings/upper-structures/
+- The Jazz Piano Site, Quartal Chord Voicings
+  https://www.thejazzpianosite.com/jazz-piano-lessons/jazz-chord-voicings/quartal-voicings/
+- PianoGroove, "So What" Chord Voicing
+  https://www.pianogroove.com/jazz-piano-lessons/so-what-chord-voicing/
