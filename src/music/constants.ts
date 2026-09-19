@@ -274,6 +274,19 @@ export const BASS = {
 const GENERAL_DENSITIES: DensityPreset[] = ['powell', 'shell3', 'standard', 'thick']
 const POWELL_DENSITIES: DensityPreset[] = ['powell', 'shell3']
 
+/** 食い込みと前の小節の裏拍がぶつかったとき、前の発音をずらす量(拍) */
+export const COLLISION_SHIFT_BEATS = 0.5
+
+/**
+ * 発音がまったく無いパターン(Rest)で、コードが変わるために1発だけ足すときの位置。
+ * 拍0に足すと白玉と区別が付かず「全音符が2回続く」状態を作ってしまうので、裏へ置く。
+ */
+export const FORCED_HIT_OFFBEAT = 1.5
+export const FORCED_HIT_OFFBEAT_ACCENT = 6
+
+/** 白玉の直後に「伸ばす」を選ぶなら、裏から入る(push)ほうを出やすくする倍率 */
+export const PUSH_AFTER_WHOLE_BOOST = 2.5
+
 export const COMP_PATTERNS: CompPattern[] = [
   {
     id: 'charleston',

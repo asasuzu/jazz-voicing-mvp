@@ -1,4 +1,11 @@
-import { COMP_PATTERNS, COMPING_DENSITY_SLIDER } from './constants'
+import {
+  COMP_PATTERNS,
+  COMPING_DENSITY_SLIDER,
+  COLLISION_SHIFT_BEATS,
+  FORCED_HIT_OFFBEAT,
+  FORCED_HIT_OFFBEAT_ACCENT,
+  PUSH_AFTER_WHOLE_BOOST,
+} from './constants'
 import type { CompHit, CompPattern, DensityPreset, ParsedChord } from './types'
 
 /** 仕様: docs/IMPLEMENTATION_PLAN.md §7 */
@@ -48,10 +55,19 @@ function choosePattern(
   const pool = COMP_PATTERNS.filter((pattern) => {
     if (!pattern.density.includes(density)) return false
     if (pattern.id === 'rest' && previousPatternId === 'rest') return false // restの直後にrestは選ばない
+    // 白玉の直後に白玉は選ばない。利用者の指摘:「全音符が2回続くのとかやめてほしい
+    // (裏から入ってたらまだまし)」。伸ばすこと自体ではなく、同じ入り方が
+    // 2回続くのが問題なので、次で伸ばしたいときは食い込み(push)を使う。
+    if (pattern.id === 'whole' && previousPatternId === 'whole') return false
     if (pattern.id === 'push' && isFirstBar) return false // 曲頭の小節では食い込めない
     return true
   })
-  const weights = pool.map((pattern) => pattern.weight * densityMultiplier(pattern.id, rhythmDensity))
+  const weights = pool.map((pattern) => {
+    let weight = pattern.weight * densityMultiplier(pattern.id, rhythmDensity)
+    // 白玉の次に伸ばすなら裏から入る、という指摘を反映して push を出やすくする
+    if (pattern.id === 'push' && previousPatternId === 'whole') weight *= PUSH_AFTER_WHOLE_BOOST
+    return weight
+  })
   return weightedPick(pool, weights)
 }
 
@@ -89,15 +105,55 @@ function chordIndexForOffset(barChords: BarChord[], offset: number): number {
   return result
 }
 
-/** コードが変わる位置には必ず発音を1つ置く(和音が鳴らない小節を作らない、仕様書§7) */
-function ensureChordChangeHits(hits: CompHit[], barChords: BarChord[], barBeats: number): CompHit[] {
+/**
+ * 新しく出てきたコードが一度も鳴らないまま終わるのを防ぐ。
+ *
+ * 以前は「各コードの開始位置に発音が無ければ足す」という実装だったが、
+ * 1小節1コードだと必ず拍0に発音が足されるので、**全小節が拍1から始まる**
+ * 状態になっていた(実測100%)。Offbeats も Push も Rest も、拍1から始まる
+ * 音に化けていて、Restは一度も休んでいなかった。
+ *
+ * 正しくは「そのコードが区間内のどこかで鳴れば良い」。位置は問わない。
+ * - 食い込み(負の拍)でそのコードが鳴るなら、小節頭に足す必要は無い
+ * - 前の小節から同じコードが続いているなら、鳴らし直さなくても良い
+ *   (弾き手が1小節休むのは普通のこと)
+ */
+function ensureEachChordSounds(
+  hits: CompHit[],
+  barChords: BarChord[],
+  barBeats: number,
+  previousChordIndex: number | null,
+): CompHit[] {
   const result = [...hits]
-  barChords.forEach(({ offset }) => {
-    if (result.some((hit) => hit.beat === offset)) return
+
+  barChords.forEach(({ offset, index }, position) => {
+    // 前の小節から続いているコードは、鳴らし直さなくてよい
+    if (position === 0 && index === previousChordIndex) return
+
+    const nextOffset = barChords[position + 1]?.offset ?? barBeats
+    const alreadySounds = result.some((hit) => {
+      const target = chordIndexForOffset(barChords, hit.beat)
+      return target === index && hit.beat < nextOffset
+    })
+    if (alreadySounds) return
+
     const laterBeats = result.filter((hit) => hit.beat > offset).map((hit) => hit.beat)
     const nextBeat = laterBeats.length > 0 ? Math.min(...laterBeats) : barBeats
-    result.push({ beat: offset, durationBeats: Math.max(0.25, nextBeat - offset), accent: 0 })
+
+    // 鳴らす位置。Rest のように発音がまったく無いパターンで拍0に足すと、
+    // 白玉と区別が付かなくなり「全音符が2回続く」の原因になる。
+    // 裏から入れば伸ばしても嫌がられない、という指摘に沿って裏へ置く。
+    const offbeat = offset + FORCED_HIT_OFFBEAT
+    const canUseOffbeat = result.length === 0 && offbeat < nextBeat - 0.25
+    const beat = canUseOffbeat ? offbeat : offset
+
+    result.push({
+      beat,
+      durationBeats: Math.max(0.25, nextBeat - beat),
+      accent: canUseOffbeat ? FORCED_HIT_OFFBEAT_ACCENT : 0,
+    })
   })
+
   return result.sort((a, b) => a.beat - b.beat)
 }
 
@@ -115,6 +171,7 @@ export function generateComping(
   const bars = groupByBar(chords)
   const result: CompingHit[] = []
   let previousPatternId: string | null = null
+  let previousChordIndex: number | null = null
 
   bars.forEach((bar, barPosition) => {
     const isFirstBar = barPosition === 0
@@ -127,7 +184,8 @@ export function generateComping(
       rawHits = fallbackWholeHit(bar.barBeats)
     }
 
-    const hits = ensureChordChangeHits(rawHits, bar.chords, bar.barBeats)
+    const hits = ensureEachChordSounds(rawHits, bar.chords, bar.barBeats, previousChordIndex)
+    previousChordIndex = bar.chords[bar.chords.length - 1].index
     hits.forEach((hit) => {
       result.push({
         chordIndex: chordIndexForOffset(bar.chords, hit.beat),
@@ -137,6 +195,44 @@ export function generateComping(
       })
     })
   })
+
+  return resolveCollisions(result.sort((a, b) => a.startBeat - b.startBeat))
+}
+
+/**
+ * 同じ瞬間に別のコードが2つ鳴るのを防ぐ。
+ *
+ * 前の小節の裏拍(例: 4拍裏)と、次の小節の食い込み(-0.5拍)は同じ位置になる。
+ * そのまま出すと、古いコードと新しいコードが同時に鳴って濁る。
+ * 食い込みは「次のコードを先取りする」ものなので、新しいほうを残す。
+ */
+function resolveCollisions(hits: CompingHit[]): CompingHit[] {
+  const result = [...hits]
+
+  for (let i = result.length - 2; i >= 0; i -= 1) {
+    const earlier = result[i]
+    const later = result[i + 1]
+    const sameMoment = Math.abs(later.startBeat - earlier.startBeat) < 0.01
+    if (!sameMoment || later.chordIndex === earlier.chordIndex) continue
+
+    // 古いコードが他でも鳴っているなら、そちらを消して食い込みを活かす。
+    const earlierSoundsElsewhere = result.some(
+      (hit, index) => index !== i && hit.chordIndex === earlier.chordIndex,
+    )
+    if (earlierSoundsElsewhere) {
+      result.splice(i, 1)
+      continue
+    }
+
+    // 古いコードの唯一の発音なら、消すとそのコードが1度も鳴らなくなる。
+    // 半拍前へずらして、両方とも鳴るようにする。
+    const shifted = earlier.startBeat - COLLISION_SHIFT_BEATS
+    result[i] = {
+      ...earlier,
+      startBeat: Math.max(0, shifted),
+      durationBeats: Math.max(0.25, earlier.durationBeats + COLLISION_SHIFT_BEATS),
+    }
+  }
 
   return result.sort((a, b) => a.startBeat - b.startBeat)
 }
