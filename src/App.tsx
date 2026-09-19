@@ -9,7 +9,12 @@ import { spellChordDegree } from './music/theory'
 import { voicingDistance } from './music/voicings'
 import type { DensityPreset, Take, Voicing } from './music/types'
 
-const DEFAULT_PROGRESSION = 'Dm7 G7 | Cmaj7 | A7alt'
+/**
+ * 4小節で、最後のG7が1小節目のCmaj7へ戻る形にしてある。
+ * 3小節だとループしたときに耳が小節を数えられず、「今どこを弾いているか
+ * わからない」状態になる(docs/FEEDBACK_01.md §1)。
+ */
+const DEFAULT_PROGRESSION = 'Cmaj7 | A7alt | Dm7 | G7'
 
 const DENSITY_OPTIONS: { id: DensityPreset; label: string }[] = [
   { id: 'powell', label: 'Powell · 2音、右手を空ける' },
@@ -74,9 +79,16 @@ function App() {
 
   const beginLoop = () => {
     setLooping(true)
+    // 前の周の最後のボイシングを覚えておき、次の周の1コードめをそこから繋げる。
+    // これが無いと、継ぎ目が「無関係な2つのテイクの端どうし」になる。
+    let previousVoicing: Voicing | undefined
     startPerformanceLoop(
       (chorusIndex) => {
-        const [nextTake] = generateTakes(progression, liveRef.current.generateOptions)
+        const [nextTake] = generateTakes(progression, {
+          ...liveRef.current.generateOptions,
+          previousVoicing,
+        })
+        previousVoicing = nextTake.voicings[nextTake.voicings.length - 1]
         setTake(nextTake)
         setChorus(chorusIndex + 1)
         // ループ再生自体が周回を担うので、書き出し用の「コーラス数」はここでは1固定にする
@@ -143,7 +155,7 @@ function App() {
           />
           <small>
             「|」が小節の区切りです。1小節に複数コードを書くと、その小節の拍数を均等に分けます。
-            例: <code>Dm7 G7 | Cmaj7 | A7alt</code> なら1小節目はDm7とG7で2拍ずつ。
+            例: <code>Dm7 G7 | Cmaj7</code> なら1小節目はDm7とG7で2拍ずつ。
           </small>
         </label>
 
@@ -319,7 +331,8 @@ function App() {
                       ...performOptions,
                       // 2周目以降はボイシングも引き直す。同じ響きが繰り返されると
                       // 「毎周ちがう」というこのアプリの意味が無くなるため。
-                      takeForChorus: () => generateTakes(progression, generateOptions)[0],
+                      takeForChorus: (_chorusIndex, previousVoicing) =>
+                        generateTakes(progression, { ...generateOptions, previousVoicing })[0],
                     }),
                     tempo,
                     beatsPerBar,

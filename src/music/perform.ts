@@ -3,7 +3,7 @@ import { generateComping } from './comping'
 import { COMPING_DENSITY_SLIDER, VELOCITY } from './constants'
 import { humanize } from './humanize'
 import type { SwingSetting } from './humanize'
-import type { DensityPreset, Performance, PerformanceEvent, Take } from './types'
+import type { DensityPreset, Performance, PerformanceEvent, Take, Voicing } from './types'
 
 /**
  * Take → Performance の本実装(Step4)。コンピング(comping.ts)とウォーキングベース
@@ -26,7 +26,7 @@ export interface PerformOptions {
    * 「同じ進行でも毎周ちがう響き」がこのアプリの主目的なので、複数コーラスを
    * 書き出すときは必ず渡すこと。省略すると全コーラスで同じボイシングになる。
    */
-  takeForChorus?: (chorusIndex: number) => Take
+  takeForChorus?: (chorusIndex: number, previousVoicing: Voicing) => Take
 }
 
 function pianoBaseVelocity(density: DensityPreset): number {
@@ -45,6 +45,7 @@ export function buildPerformance(take: Take, options: PerformOptions): Performan
   const baseVelocity = pianoBaseVelocity(options.density)
 
   const events: PerformanceEvent[] = []
+  let lastTake = take
 
   for (let chorus = 0; chorus < choruses; chorus += 1) {
     const offset = chorus * beatsPerChorus
@@ -52,7 +53,9 @@ export function buildPerformance(take: Take, options: PerformOptions): Performan
     // コーラスごとにテイクもリズムも引き直す(仕様書§9)。1コーラス目は呼び出し側が
     // 選んだテイクをそのまま使い、2周目以降だけ引き直す。画面に出ているテイクと
     // 書き出しの1周目が食い違わないようにするため。
-    const chorusTake = chorus === 0 ? take : options.takeForChorus?.(chorus) ?? take
+    const previousVoicing = lastTake.voicings[lastTake.voicings.length - 1]
+    const chorusTake = chorus === 0 ? take : options.takeForChorus?.(chorus, previousVoicing) ?? take
+    lastTake = chorusTake
     const compingHits = generateComping(chorusTake.chords, options.density, rhythmDensity, options.beatsPerBar)
     compingHits.forEach((hit) => {
       const voicing = chorusTake.voicings[hit.chordIndex]

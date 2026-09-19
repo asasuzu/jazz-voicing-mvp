@@ -12,6 +12,14 @@ export interface GenerateTakesOptions {
   topLineWeight: number
   beatsPerBar: number
   withBass: boolean
+  /**
+   * 直前のコーラスの最後のボイシング。渡すと、最初のコードをこれに繋がるように選ぶ。
+   *
+   * ループ再生は1周ごとに独立したテイクを引き直すので、これが無いと継ぎ目が
+   * 「無関係な2つのテイクの端どうし」になる。実測で、進行の中の平均移動量が14に
+   * 対して継ぎ目は24だった(docs/FEEDBACK_01.md §5)。
+   */
+  previousVoicing?: Voicing
 }
 
 interface BeamPath {
@@ -49,9 +57,10 @@ function pickOneTake(
     topLineWeight: options.topLineWeight,
   })
 
+  const previous = options.previousVoicing ?? null
   let beam: BeamPath[] = candidatesPerChord[0].map((candidate) => ({
     voicings: [candidate],
-    cumulativeScore: score(null, candidate, contextFor([])),
+    cumulativeScore: score(previous, candidate, contextFor([])),
     recentFamilies: [candidate.family],
   }))
   beam.sort((a, b) => a.cumulativeScore - b.cumulativeScore)
@@ -74,10 +83,23 @@ function pickOneTake(
     beam = expanded.slice(0, SEARCH.beamWidth)
   }
 
-  beam.sort((a, b) => a.cumulativeScore - b.cumulativeScore)
+  // 前のコーラスから繋ぐ指定が無いときは、このテイク単体が繰り返される前提で
+  // 末尾→先頭の接続も評価する。単発で書き出した1コーラスをDAWでループさせても
+  // 継ぎ目が飛ばないようにするため。
+  const scored = beam.map((path) => {
+    if (previous) return path
+    const first = path.voicings[0]
+    const last = path.voicings[path.voicings.length - 1]
+    return {
+      ...path,
+      cumulativeScore: path.cumulativeScore + score(last, first, contextFor(path.recentFamilies)),
+    }
+  })
+
+  scored.sort((a, b) => a.cumulativeScore - b.cumulativeScore)
   const chosen = weightedChoice(
-    beam,
-    beam.map((path) => path.cumulativeScore),
+    scored,
+    scored.map((path) => path.cumulativeScore),
     options.randomness,
   )
 
