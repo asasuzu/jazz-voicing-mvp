@@ -1,7 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { playChord, playPerformance, startPerformanceLoop, stopPlayback } from './music/render/audio'
+import {
+  getPlaybackPosition,
+  playChord,
+  playPerformance,
+  startPerformanceLoop,
+  stopPlayback,
+} from './music/render/audio'
 import { downloadMidi } from './music/render/midi'
-import { buildPerformance } from './music/perform'
+import { buildPerformance, chordIndexAtBeat } from './music/perform'
 import type { PerformOptions } from './music/perform'
 import type { SwingSetting } from './music/humanize'
 import { generateTakes } from './music/take'
@@ -39,6 +45,9 @@ function App() {
   const [error, setError] = useState('')
   const [looping, setLooping] = useState(false)
   const [chorus, setChorus] = useState(0)
+  /** 今どのコードが鳴っているか。再生していないときはnull。 */
+  const [playingIndex, setPlayingIndex] = useState<number | null>(null)
+  const [tracking, setTracking] = useState(false)
 
   const swing: SwingSetting = swingMode === 'auto' ? 'auto' : swingAmount
 
@@ -58,6 +67,52 @@ function App() {
     liveRef.current = { generateOptions, performOptions }
   }, [generateOptions, performOptions])
 
+  // 画面に出ているテイクを、毎フレーム作り直さずに参照するためのref
+  const takeRef = useRef<Take | null>(take)
+  useEffect(() => {
+    takeRef.current = take
+  }, [take])
+
+  /**
+   * AudioContextの時計を毎フレーム見て、今鳴っているコードを割り出す。
+   * Web Audioは1コーラス分をまとめて予約するので、音が鳴る瞬間に呼ばれる
+   * コールバックが無い。時計から逆算するしかない。
+   */
+  useEffect(() => {
+    if (!tracking) {
+      setPlayingIndex(null)
+      return
+    }
+
+    let frame = 0
+    // 再生開始直後は、予約はしたがまだ鳴り始めていない一瞬があるので、
+    // 「一度鳴り始めたか」を持っておく。これが無いと開始直後に追跡を止めてしまう。
+    let started = false
+
+    const tick = () => {
+      const position = getPlaybackPosition()
+      const current = takeRef.current
+      let next: number | null = null
+
+      if (position) started = true
+      // Play allのように1回で終わる再生では、鳴り終わったら追跡をやめる。
+      // ループ中は次のコーラスが来るので止めない。
+      if (started && !position && !looping) {
+        setTracking(false)
+        return
+      }
+
+      if (position && current) next = chordIndexAtBeat(current.chords, position.beat)
+
+      // 同じ値ならReactは再描画しないので、毎フレーム呼んでも問題ない
+      setPlayingIndex((previous) => (previous === next ? previous : next))
+      frame = requestAnimationFrame(tick)
+    }
+
+    frame = requestAnimationFrame(tick)
+    return () => cancelAnimationFrame(frame)
+  }, [tracking, looping])
+
   const changeTempo = (value: number) => setTempo(Math.min(300, Math.max(40, Math.round(value))))
 
   const generate = () => {
@@ -75,10 +130,12 @@ function App() {
   const stopLoop = () => {
     stopPlayback()
     setLooping(false)
+    setTracking(false)
   }
 
   const beginLoop = () => {
     setLooping(true)
+    setTracking(true)
     // 前の周の最後のボイシングを覚えておき、次の周の1コードめをそこから繋げる。
     // これが無いと、継ぎ目が「無関係な2つのテイクの端どうし」になる。
     let previousVoicing: Voicing | undefined
@@ -319,6 +376,7 @@ function App() {
                 onClick={() => {
                   stopLoop()
                   playPerformance(buildPerformance(take, { ...performOptions, choruses: 1 }), tempo)
+                  setTracking(true)
                 }}
               >
                 Play all
@@ -345,13 +403,21 @@ function App() {
           </div>
 
           {barsOf(take).map((bar, barPosition) => (
-            <div className="bar-row" key={take.chords[bar[0].chordIndex].barIndex}>
+            <div
+              className={`bar-row${bar.some((item) => item.chordIndex === playingIndex) ? ' playing' : ''}`}
+              key={take.chords[bar[0].chordIndex].barIndex}
+            >
               <div className="bar-label">小節 {barPosition + 1}</div>
               <div className="voicing-grid">
                 {bar.map(({ voicing, chordIndex }) => (
-                  <article className="voicing-card" key={`${take.id}-${chordIndex}`}>
+                  <article
+                    className={`voicing-card${playingIndex === chordIndex ? ' playing' : ''}`}
+                    key={`${take.id}-${chordIndex}`}
+                  >
                     <div className="card-topline">
-                      <span className="index">{String(chordIndex + 1).padStart(2, '0')}</span>
+                      <span className="index">
+                        {playingIndex === chordIndex ? '▶ NOW' : String(chordIndex + 1).padStart(2, '0')}
+                      </span>
                       <span className="movement">{movementLabel(take, chordIndex)}</span>
                     </div>
                     <h3>{take.chords[chordIndex].symbol}</h3>

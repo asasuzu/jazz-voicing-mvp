@@ -3,7 +3,7 @@ import { generateComping } from './comping'
 import { COMPING_DENSITY_SLIDER, VELOCITY } from './constants'
 import { humanize } from './humanize'
 import type { SwingSetting } from './humanize'
-import type { DensityPreset, Performance, PerformanceEvent, Take, Voicing } from './types'
+import type { DensityPreset, ParsedChord, Performance, PerformanceEvent, Take, Voicing } from './types'
 
 /**
  * Take → Performance の本実装(Step4)。コンピング(comping.ts)とウォーキングベース
@@ -92,4 +92,21 @@ export function buildPerformance(take: Take, options: PerformOptions): Performan
   })
 
   return { events: humanized, totalBeats: beatsPerChorus * choruses, take }
+}
+
+/**
+ * コーラス先頭から数えた拍位置が、何番目のコードに当たるかを返す。
+ * 範囲外(拍が進行の長さを超えている)ならnull。
+ *
+ * 「今どのコードが鳴っているか」の表示に使う。1小節に複数コードがある場合は
+ * chord.beatsが既に分割されているので、そのまま足していけばよい。
+ */
+export function chordIndexAtBeat(chords: ParsedChord[], beat: number): number | null {
+  if (beat < 0) return null
+  let cursor = 0
+  for (let i = 0; i < chords.length; i += 1) {
+    cursor += chords[i].beats
+    if (beat < cursor) return i
+  }
+  return null
 }

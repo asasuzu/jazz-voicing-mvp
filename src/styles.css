@@ -67,6 +67,17 @@ h2 { margin: 5px 0 0; font-family: Georgia, "Times New Roman", serif; font-size:
 .card-topline { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .index { color: #726e69; font: 700 11px ui-monospace, SFMono-Regular, Menlo, monospace; }
 .movement { color: #77736e; font-size: 10px; }
+/* 再生中のコード。ループ中に「今どこか」が分かるようにする。 */
+.voicing-card.playing { border-color: #e9dfd0; background: #1f1c18; box-shadow: inset 0 0 0 1px #e9dfd0; }
+.voicing-card.playing .index { color: #e9dfd0; }
+.voicing-card.playing h3 { color: #f3ece1; }
+.bar-row.playing .bar-label { color: #cbbda6; }
+.bar-row.playing .bar-label::after { content: " \25CF"; color: #e9dfd0; }
+
+@media (prefers-reduced-motion: no-preference) {
+  .voicing-card { transition: border-color .12s ease, background-color .12s ease; }
+}
+
 .voicing-card h3 { margin: 24px 0 3px; font-family: Georgia, "Times New Roman", serif; font-size: 32px; font-weight: 500; }
 .family { color: #9d8d77; font-size: 11px; text-transform: uppercase; letter-spacing: .09em; }
 .notes { display: flex; gap: 6px; flex-wrap: wrap; margin: 22px 0 9px; }

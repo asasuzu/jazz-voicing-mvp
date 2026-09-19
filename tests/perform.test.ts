@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import { buildPerformance } from '../src/music/perform'
+import { buildPerformance, chordIndexAtBeat } from '../src/music/perform'
 import { generateTakes } from '../src/music/take'
 import { voicingDistance } from '../src/music/voicings'
+import { parseProgression } from '../src/music/theory'
 
 /**
  * 「同じ進行でも毎周ちがう響き」がこのアプリの主目的なので、
@@ -124,5 +125,29 @@ describe('ループの継ぎ目', () => {
         .join(','),
     )
     expect(new Set(perChorus).size).toBeGreaterThan(1)
+  })
+})
+
+describe('再生位置からコードを割り出す', () => {
+  it('1小節1コードなら拍数どおりに切り替わる', () => {
+    const chords = parseProgression('Cmaj7 | A7alt | Dm7 | G7', 4)
+    expect(chordIndexAtBeat(chords, 0)).toBe(0)
+    expect(chordIndexAtBeat(chords, 3.99)).toBe(0)
+    expect(chordIndexAtBeat(chords, 4)).toBe(1)
+    expect(chordIndexAtBeat(chords, 15.9)).toBe(3)
+  })
+
+  it('1小節2コードなら2拍で切り替わる', () => {
+    const chords = parseProgression('Dm7 G7 | Cmaj7', 4)
+    expect(chordIndexAtBeat(chords, 0)).toBe(0)
+    expect(chordIndexAtBeat(chords, 1.9)).toBe(0)
+    expect(chordIndexAtBeat(chords, 2)).toBe(1)
+    expect(chordIndexAtBeat(chords, 4)).toBe(2)
+  })
+
+  it('進行の外に出たらnull', () => {
+    const chords = parseProgression('Cmaj7 | G7', 4)
+    expect(chordIndexAtBeat(chords, 8)).toBeNull()
+    expect(chordIndexAtBeat(chords, -1)).toBeNull()
   })
 })

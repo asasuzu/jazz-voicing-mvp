@@ -6,6 +6,49 @@ let activeOscillators: OscillatorNode[] = []
 let loopTimer: number | null = null
 let looping = false
 
+/**
+ * 「今どのコードが鳴っているか」を画面に出すための再生位置。
+ *
+ * Web Audioは1コーラス分をまとめて先に予約してしまうので、音が鳴る瞬間に
+ * 呼ばれるコールバックは無い。代わりに、予約したコーラスの開始時刻と
+ * 1拍の長さを覚えておき、画面側がAudioContextの時計を見て位置を計算する。
+ *
+ * ループ再生では次のコーラスを0.4秒ほど先に予約するので、予約済みの区間が
+ * 一時的に2つ並ぶ。1つだけ持つと、まだ鳴っていない次のコーラスで
+ * 上書きされてしまうため、区間を並べて現在時刻が入るものを選ぶ。
+ */
+interface ScheduledChorus {
+  startTime: number
+  secondsPerBeat: number
+  totalBeats: number
+  chorusIndex: number
+}
+
+let scheduledChoruses: ScheduledChorus[] = []
+
+export interface PlaybackPosition {
+  /** コーラス先頭からの拍(小数) */
+  beat: number
+  chorusIndex: number
+}
+
+export function getPlaybackPosition(): PlaybackPosition | null {
+  if (!audioContext || scheduledChoruses.length === 0) return null
+  const now = audioContext.currentTime
+
+  // 終わった区間は捨てる。残っているもののうち、現在時刻を含むものを使う。
+  scheduledChoruses = scheduledChoruses.filter(
+    (entry) => now < entry.startTime + entry.totalBeats * entry.secondsPerBeat,
+  )
+  const current = scheduledChoruses.find((entry) => now >= entry.startTime)
+  if (!current) return null
+
+  return {
+    beat: (now - current.startTime) / current.secondsPerBeat,
+    chorusIndex: current.chorusIndex,
+  }
+}
+
 function getAudioContext(): AudioContext {
   if (audioContext) return audioContext
 
@@ -82,6 +125,7 @@ export function stopPlayback(): void {
   }
   activeOscillators.forEach((osc) => osc.stop())
   activeOscillators = []
+  scheduledChoruses = []
 }
 
 /** durationBeats いっぱいまで伸ばさず、少し切って粒立ちを出す。仕様に無い値なので決め打ち。 */
@@ -101,7 +145,9 @@ export async function playPerformance(performance: Performance, tempo: number): 
   const ctx = getAudioContext()
   if (ctx.state === 'suspended') await ctx.resume()
   const secondsPerBeat = 60 / tempo
-  scheduleEvents(ctx, performance, ctx.currentTime + 0.06, secondsPerBeat)
+  const start = ctx.currentTime + 0.06
+  scheduleEvents(ctx, performance, start, secondsPerBeat)
+  scheduledChoruses = [{ startTime: start, secondsPerBeat, totalBeats: performance.totalBeats, chorusIndex: 0 }]
 }
 
 /**
@@ -153,6 +199,7 @@ export async function startPerformanceLoop(
     if (!looping) return
 
     const secondsPerBeat = 60 / getTempo()
+    const thisChorus = chorusIndex
     const performance = buildChorus(chorusIndex)
     chorusIndex += 1
 
@@ -160,6 +207,12 @@ export async function startPerformanceLoop(
     // 追い越してしまう可能性への保険として下限クランプを入れる。
     const scheduledStart = clampChorusStart(nextStart, ctx.currentTime, TIMING.loopMinLookaheadSeconds)
     scheduleEvents(ctx, performance, scheduledStart, secondsPerBeat)
+    scheduledChoruses.push({
+      startTime: scheduledStart,
+      secondsPerBeat,
+      totalBeats: performance.totalBeats,
+      chorusIndex: thisChorus,
+    })
     const chorusSeconds = performance.totalBeats * secondsPerBeat
 
     nextStart = scheduledStart + chorusSeconds
