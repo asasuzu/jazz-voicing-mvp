@@ -27,13 +27,15 @@ const TRIAD_INTERVALS: Record<'major' | 'minor', number[]> = {
   minor: [0, 3, 7],
 }
 
+// US Im (1 #9 5) は出典の表にあるが外している。ベースがルートを弾く前提だと
+// ルートの重複とナチュラル5度を足すだけで、増える色は#9のみ。
+// 利用者いわく「ドミナントで5thはかなり使わん」(docs/MUSICAL_RULES.md)。
 const DOMINANT_STRUCTURES: UpperStructure[] = [
   { id: 'US-II', offset: 2, quality: 'major', tensions: '9 #11 13' },
   { id: 'US-bIII', offset: 3, quality: 'major', tensions: '#9 5 b7' },
   { id: 'US-bV', offset: 6, quality: 'major', tensions: 'b9 #11 b7' },
   { id: 'US-bVI', offset: 8, quality: 'major', tensions: 'b13 1 #9' },
   { id: 'US-VI', offset: 9, quality: 'major', tensions: '13 b9 3' },
-  { id: 'US-Im', offset: 0, quality: 'minor', tensions: '1 #9 5' },
   { id: 'US-bIIm', offset: 1, quality: 'minor', tensions: 'b9 3 b13' },
   { id: 'US-bIIIm', offset: 3, quality: 'minor', tensions: '#9 #11 b7' },
   { id: 'US-#IVm', offset: 6, quality: 'minor', tensions: '#11 13 b9' },

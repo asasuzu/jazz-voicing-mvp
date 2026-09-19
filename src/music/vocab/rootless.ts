@@ -20,7 +20,11 @@ const QUALITY_VOCAB: Record<ChordQuality, QualityVocab> = {
   major: { guideTones: ['3', '6'], tensionPool: ['5', '9', '13', '3'] },
   major7: { guideTones: ['3', '7'], tensionPool: ['5', '9', '13', '#11'] },
   minor7: { guideTones: ['b3', 'b7'], tensionPool: ['5', '9', '11', '13'] },
-  dominant7: { guideTones: ['3', 'b7'], tensionPool: ['9', '13', '5', '3'] },
+  // ドミナントのプールにナチュラル5度を入れない。利用者いわく
+  // 「ドミナントで5thはかなり使わん」。rootlessでは5度を13度へ置き換えるのが
+  // 実用的(VOICING_RESEARCH.md §3, docs/MUSICAL_RULES.md)。
+  // #11は素のドミナントに色を足す選択肢。USTも素のV7へ普通に色を足すので揃えた。
+  dominant7: { guideTones: ['3', 'b7'], tensionPool: ['9', '13', '3', '#11'] },
   halfDiminished: { guideTones: ['b3', 'b7'], tensionPool: ['b5', '11', '9', 'b3'] },
   diminished7: { guideTones: ['b3', 'bb7'], tensionPool: ['b5', 'b3', 'bb7'] },
   minorMajor7: { guideTones: ['b3', '7'], tensionPool: ['5', '9', '13', 'b3'] },
@@ -38,8 +42,12 @@ function alteredTensionPool(chord: ParsedChord): string[] | null {
 
   // 音数を確保するためのフィラー。altのときにナチュラル5度を足すと
   // オルタードスケール(b9 #9 #11 b13)から外れて、altの響きでなくなる。
-  // altでは残りのオルタード音を、そうでなければ5度を足す。
-  const filler = alt ? (upperTone === 'b13' ? '#11' : 'b13') : '5'
+  // alt以外でも、ナチュラル5度は最後の手段にする(「ドミナントで5thはかなり使わん」)。
+  const used = new Set([...ninths, upperTone])
+  const fillerOrder = alt
+    ? [upperTone === 'b13' ? '#11' : 'b13']
+    : [flat13 ? 'b13' : '13', '#11', '9', '5']
+  const filler = fillerOrder.find((degree) => !used.has(degree)) ?? '5'
   return [...ninths, upperTone, filler]
 }
 

@@ -84,6 +84,37 @@ describe('ドミナントの5度', () => {
   })
 })
 
+describe('ドミナントのナチュラル5度', () => {
+  it('ほとんど使われない', () => {
+    // 利用者いわく「ドミナントで5thはかなり使わん。てのが、ルールかなとても雑に言えば」
+    // 「絶対に使わない」ではないので、率で見張る。対応前は49.3%だった。
+    let total = 0
+    let withFifth = 0
+
+    for (let i = 0; i < 60; i += 1) {
+      const [take] = generateTakes('G7 | C7 | A7 | Bb7 | Dm7 G7', {
+        density: 'thick',
+        randomness: 0.38,
+        topLineWeight: 0.6,
+        beatsPerBar: 4,
+        withBass: true,
+      })
+      take.voicings.forEach((voicing, index) => {
+        const chord = take.chords[index]
+        if (chord.quality !== 'dominant7') return
+        const offsets = new Set(
+          [...voicing.left, ...voicing.right].map((midi) => ((midi % 12) - chord.rootPc + 12) % 12),
+        )
+        total += 1
+        if (offsets.has(7)) withFifth += 1
+      })
+    }
+
+    const rate = withFifth / total
+    expect(rate, `ナチュラル5度の率が ${(rate * 100).toFixed(1)}%`).toBeLessThan(0.15)
+  })
+})
+
 describe('候補の多様性', () => {
   it('規則を足しても、語彙が1〜2種類に痩せない', () => {
     // 規則を強くしすぎると候補が消えて「毎回同じ」になる。そこを見張る。
