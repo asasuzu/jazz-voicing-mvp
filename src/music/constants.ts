@@ -52,13 +52,53 @@ export const DENSITY: Record<DensityPreset, {
   thick:    { totalNotes: [5, 7], useRightHand: true,  includeRoot: false, leftHandRange: RANGES.leftHandDefault },
 }
 
+/**
+ * 「このコードではこの音を使ってほしい／使ってほしくない」を書く表。
+ * キーはルートからの半音、値は加点(負ほど選ばれやすい)。
+ *
+ * 利用者から出る「ここはこの音にしてほしい」という要望は、好みではなく
+ * 名前のある規則であることが多い。そういうものはここに1行足せば済むように
+ * してある。コードを書き換える必要は無い。
+ *
+ * 値の目安: 1.0 が「声部が1半音動くのと同じくらい嫌」。ランダム性は
+ * 色を変えるためのもので、ボイスリーディングの規則を壊すためのものではない。
+ * randomnessを上げても守ってほしい規則は、2.0以上を付けないと抽選をすり抜ける。
+ *
+ * 現在入っている根拠:
+ * - ドミナントの5度より13度（VOICING_RESEARCH.md §3）。rootless dominantでは
+ *   5度を13度へ置き換えるのが実用的。ナチュラル5度は響きが痩せるうえ、
+ *   ii-Vで ii の9度をそのまま13度として保持できなくなる
+ *   （利用者の指摘: Dm7の9th(E)がG7の5th(D)へ動くのは変）
+ * - major7の11度は3度とぶつかるので避ける
+ */
+export const TONE_PRIORITY: Partial<Record<ChordQuality, Record<number, number>>> = {
+  dominant7: {
+    9: -2.0, // 13th。ここを最優先にする
+    7: 2.5, // ナチュラル5th
+    2: -0.2, // 9th
+  },
+  major7: {
+    9: -0.2, // 13th(6th)
+    2: -0.2, // 9th
+    5: 1.2, // ナチュラル11th。3度とぶつかる
+  },
+  minor7: {
+    2: -0.2, // 9th
+    5: -0.1, // 11th。マイナーでは普通に使える
+  },
+}
+
 export const SCORE_WEIGHTS = {
   voiceLeading: 1.0,
   topLine: 0.6,           // UI スライダーで 0〜1.5 に変更可
   register: 0.3,
   familyVariety: 0.4,
   noteCountStability: 0.2,
-  commonTone: 0.3,        // 加点なので減算する
+  // 共通音の保持。前のコードで鳴っていた音がそのまま次でも使えるなら残す。
+  // 0.3では他の項に負けて、保持できるテンションが平気で動いていた
+  // (Dm7の9th(E)が179回中80回もG7で消えていた)。
+  commonTone: 0.9,        // 加点なので減算する
+  tonePriority: 1.0,      // TONE_PRIORITY表の効き
   wideSpanPenalty: 0.15,  // handSpanPreferred 超過1半音あたり
 }
 

@@ -3,7 +3,7 @@ import { registerOnlyScore, score } from './score'
 import type { ScoreContext } from './score'
 import { parseProgression } from './theory'
 import type { DensityPreset, ParsedChord, Take, Voicing } from './types'
-import { generateVoicingsForChord, weightedChoice } from './voicings'
+import { generateVoicingsForChord, violatesVoiceLeadingRule, weightedChoice } from './voicings'
 
 /** 仕様: docs/IMPLEMENTATION_PLAN.md §5.2 */
 export interface GenerateTakesOptions {
@@ -50,7 +50,8 @@ function pickOneTake(
   options: GenerateTakesOptions,
   targetNoteCount: number,
 ): Take {
-  const contextFor = (recentFamilies: string[]): ScoreContext => ({
+  const contextFor = (recentFamilies: string[], chord: ParsedChord): ScoreContext => ({
+    chord,
     density: options.density,
     recentFamilies,
     targetNoteCount,
@@ -60,7 +61,7 @@ function pickOneTake(
   const previous = options.previousVoicing ?? null
   let beam: BeamPath[] = candidatesPerChord[0].map((candidate) => ({
     voicings: [candidate],
-    cumulativeScore: score(previous, candidate, contextFor([])),
+    cumulativeScore: score(previous, candidate, contextFor([], chords[0])),
     recentFamilies: [candidate.family],
   }))
   beam.sort((a, b) => a.cumulativeScore - b.cumulativeScore)
@@ -70,8 +71,15 @@ function pickOneTake(
     const expanded: BeamPath[] = []
     beam.forEach((path) => {
       const prev = path.voicings[path.voicings.length - 1]
-      candidatesPerChord[chordIndex].forEach((candidate) => {
-        const stepScore = score(prev, candidate, contextFor(path.recentFamilies))
+      // 規則に反する候補は、スコアで嫌うのではなく展開の時点で外す。
+      // スコアだけだとrandomnessを上げたときに抽選をすり抜ける。
+      // 全部外れてしまう場合は、候補が無くなるほうが困るので元に戻す。
+      const allowed = candidatesPerChord[chordIndex].filter(
+        (candidate) => !violatesVoiceLeadingRule(chords[chordIndex], prev, candidate),
+      )
+      const usable = allowed.length > 0 ? allowed : candidatesPerChord[chordIndex]
+      usable.forEach((candidate) => {
+        const stepScore = score(prev, candidate, contextFor(path.recentFamilies, chords[chordIndex]))
         expanded.push({
           voicings: [...path.voicings, candidate],
           cumulativeScore: path.cumulativeScore + stepScore,
@@ -92,7 +100,8 @@ function pickOneTake(
     const last = path.voicings[path.voicings.length - 1]
     return {
       ...path,
-      cumulativeScore: path.cumulativeScore + score(last, first, contextFor(path.recentFamilies)),
+      cumulativeScore:
+        path.cumulativeScore + score(last, first, contextFor(path.recentFamilies, chords[0])),
     }
   })
 

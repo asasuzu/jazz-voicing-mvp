@@ -81,6 +81,42 @@ const DEFINING_TONES: Record<ChordQuality, number[][]> = {
   sus7: [[5, 10]],
 }
 
+/**
+ * 前のコードとの関係で「ランダムでもやってほしくない」動きを弾く規則。
+ *
+ * スコアの重みで嫌うだけだと、randomnessを上げたときに抽選をすり抜ける。
+ * 一方で、無条件に候補から外すと使える形まで消える(例: UST bIII は
+ * ナチュラル5度を含むが、実際に使われる形)。so 前のコードを見て、
+ * 保持できる音があるときだけ弾く。
+ *
+ * 現在の規則:
+ * - 前のコードに、このコードの13th(または b13th)に当たる音が鳴っているのに、
+ *   その音を捨ててナチュラル5度へ動くのを禁止する。
+ *   利用者の指摘:「Dm7の9th(実音E)がG7の5th(実音D)にいくのが変。
+ *   G7側を13th(実音E)もしくは b13th(実音Eb)にして」
+ *   根拠: ベースがルートを弾く前提では5度の情報量が乏しく、13thへ
+ *   置き換えるのが実用的(VOICING_RESEARCH.md §3)。
+ */
+export function violatesVoiceLeadingRule(
+  chord: ParsedChord,
+  previous: Voicing | null,
+  candidate: Voicing,
+): boolean {
+  if (!previous || chord.quality !== 'dominant7') return false
+
+  const offsets = new Set(
+    [...candidate.left, ...candidate.right].map((midi) => ((midi % 12) - chord.rootPc + 12) % 12),
+  )
+  if (!offsets.has(7)) return false // ナチュラル5度が無ければ関係ない
+  if (offsets.has(9) || offsets.has(8)) return false // 13th か b13th があるなら良い
+
+  // 前のコードに、13th か b13th として保持できる音が鳴っていたか
+  const previousPcs = new Set([...previous.left, ...previous.right].map((midi) => midi % 12))
+  const thirteenthPc = (chord.rootPc + 9) % 12
+  const flatThirteenthPc = (chord.rootPc + 8) % 12
+  return previousPcs.has(thirteenthPc) || previousPcs.has(flatThirteenthPc)
+}
+
 function hasDefiningTones(chord: ParsedChord, voicing: Voicing): boolean {
   const present = new Set(
     [...voicing.left, ...voicing.right].map((midi) => ((midi % 12) - chord.rootPc + 12) % 12),

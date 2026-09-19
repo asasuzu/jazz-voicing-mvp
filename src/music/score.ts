@@ -1,6 +1,14 @@
-import { DENSITY, PLAYABILITY, POWELL_FAMILY_BIAS, RANGES, SCORE_WEIGHTS, TOP_LINE_PENALTY } from './constants'
+import {
+  DENSITY,
+  PLAYABILITY,
+  POWELL_FAMILY_BIAS,
+  RANGES,
+  SCORE_WEIGHTS,
+  TONE_PRIORITY,
+  TOP_LINE_PENALTY,
+} from './constants'
 import { span } from './playability'
-import type { DensityPreset, Voicing } from './types'
+import type { DensityPreset, ParsedChord, Voicing } from './types'
 import { voicingDistance } from './voicings'
 
 /**
@@ -9,6 +17,8 @@ import { voicingDistance } from './voicings'
  * 参照するだけにし、ロジック側に数値を書かない。
  */
 export interface ScoreContext {
+  /** 評価するボイシングが鳴るコード。TONE_PRIORITY表を引くのに使う。 */
+  chord: ParsedChord
   density: DensityPreset
   recentFamilies: string[]   // 直前まで(最大3件)に選ばれたfamily
   targetNoteCount: number
@@ -56,6 +66,23 @@ function varietyPenalty(recentFamilies: string[], family: string): number {
   return 0
 }
 
+/**
+ * TONE_PRIORITY表を引いて、そのコードで使ってほしい音か・避けたい音かを合計する。
+ * 「ドミナントは5度より13度」のような規則はここで効く。
+ */
+function tonePriorityPenalty(chord: ParsedChord, voicing: Voicing): number {
+  const table = TONE_PRIORITY[chord.quality]
+  if (!table) return 0
+  const offsets = new Set(
+    allNotes(voicing).map((midi) => ((midi % 12) - chord.rootPc + 12) % 12),
+  )
+  let total = 0
+  offsets.forEach((offset) => {
+    total += table[offset] ?? 0
+  })
+  return total
+}
+
 /** 前後で保たれる音の数(多いほど滑らか)。加点なのでscore側で減算する。 */
 function commonToneCount(prev: Voicing, curr: Voicing): number {
   const prevNotes = [...allNotes(prev)].sort((a, b) => a - b)
@@ -92,8 +119,9 @@ function wideSpanPenalty(voicing: Voicing): number {
 export function score(prev: Voicing | null, curr: Voicing, context: ScoreContext): number {
   const registerTerm = SCORE_WEIGHTS.register * registerPenalty(curr, context.density)
   const wideSpanTerm = SCORE_WEIGHTS.wideSpanPenalty * wideSpanPenalty(curr)
+  const tonePriorityTerm = SCORE_WEIGHTS.tonePriority * tonePriorityPenalty(context.chord, curr)
 
-  if (!prev) return registerTerm + wideSpanTerm
+  if (!prev) return registerTerm + wideSpanTerm + tonePriorityTerm
 
   const voiceLeadingTerm = SCORE_WEIGHTS.voiceLeading * voicingDistance(allNotes(prev), allNotes(curr))
   const topLineTerm = context.topLineWeight * topLinePenalty(prev, curr)
@@ -112,6 +140,7 @@ export function score(prev: Voicing | null, curr: Voicing, context: ScoreContext
     voiceLeadingTerm +
     topLineTerm +
     registerTerm +
+    tonePriorityTerm +
     varietyTerm +
     familyBiasTerm +
     stabilityTerm +
