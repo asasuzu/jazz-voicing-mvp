@@ -38,9 +38,10 @@ describe('全音符の連続', () => {
 })
 
 describe('小節の入り方', () => {
-  it('すべての小節が拍1から始まるわけではない', () => {
+  it('ほとんどの小節が裏から始まる', () => {
+    // 利用者の指摘:「このスタイルなら2裏、4裏だけでもいい(9.9割)」。
     // 以前は「コードが変わる位置に必ず発音を置く」の実装が効きすぎて、
-    // 100%の小節が拍1から始まっていた(Offbeatも Push も Rest も全部潰れていた)。
+    // 100%の小節が拍1から始まっていた。今は逆に、拍1から始まるほうが例外。
     let withDownbeat = 0
     let total = 0
     for (let i = 0; i < 100; i += 1) {
@@ -53,8 +54,40 @@ describe('小節の入り方', () => {
       }
     }
     const rate = withDownbeat / total
-    expect(rate, `拍1から始まる小節が ${(rate * 100).toFixed(1)}%`).toBeLessThan(0.8)
-    expect(rate).toBeGreaterThan(0.2) // 逆に裏ばかりになっても不自然
+    expect(rate, `拍1から始まる小節が ${(rate * 100).toFixed(1)}%`).toBeLessThan(0.05)
+  })
+
+  it('2裏と4裏だけの小節が9割を超える', () => {
+    let offbeatOnly = 0
+    let total = 0
+    for (let i = 0; i < 100; i += 1) {
+      const hits = generateComping(chords, 'thick', 50, 4)
+      for (let bar = 0; bar < 4; bar += 1) {
+        total += 1
+        const positions = hitsInBar(hits, bar)
+          .map((hit) => Number((hit.startBeat - bar * 4).toFixed(2)))
+          .sort((a, b) => a - b)
+        if (positions.length === 2 && positions[0] === 1.5 && positions[1] === 3.5) offbeatOnly += 1
+      }
+    }
+    const rate = offbeatOnly / total
+    expect(rate, `2裏4裏だけの小節が ${(rate * 100).toFixed(1)}%`).toBeGreaterThan(0.9)
+  })
+})
+
+describe('食い込んだあとの拍1', () => {
+  it('4裏で鳴らした直後に拍1を打たない', () => {
+    // 利用者の指摘:「4裏から1頭でうつのは0.000001割ぐらいでいいです」
+    ;[0, 50, 100].forEach((rhythmDensity) => {
+      for (let i = 0; i < 100; i += 1) {
+        const hits = generateComping(chords, 'thick', rhythmDensity, 4)
+        for (let bar = 1; bar < 4; bar += 1) {
+          const anticipated = hits.some((hit) => Math.abs(hit.startBeat - (bar * 4 - 0.5)) < 0.01)
+          const downbeat = hitsInBar(hits, bar).some((hit) => Math.abs(hit.startBeat - bar * 4) < 0.01)
+          expect(anticipated && downbeat, `${bar}小節目: 4裏の直後に拍1を打っている`).toBe(false)
+        }
+      }
+    })
   })
 })
 

@@ -2,6 +2,7 @@ import {
   COMP_PATTERNS,
   COMPING_DENSITY_SLIDER,
   COLLISION_SHIFT_BEATS,
+  OFFBEAT_DOMINANCE_RELAXATION,
   FORCED_HIT_OFFBEAT,
   FORCED_HIT_OFFBEAT_ACCENT,
   PUSH_AFTER_WHOLE_BOOST,
@@ -32,6 +33,14 @@ function weightedPick(patterns: CompPattern[], weights: number[]): CompPattern {
  */
 function densityMultiplier(patternId: string, rhythmDensity: number): number {
   const { default: mid, sparseMultiplier, busyMultiplier } = COMPING_DENSITY_SLIDER
+
+  // offbeats は既定で9割超を占める。スライダーを端へ振ったときだけ独占を緩めて、
+  // 他のパターンが出るようにする(そうしないとスライダーが効かなくなる)。
+  if (patternId === 'offbeats') {
+    const distance = Math.abs(rhythmDensity - mid) / mid // 0(中央)〜1(端)
+    return 1 + distance * (OFFBEAT_DOMINANCE_RELAXATION - 1)
+  }
+
   const isWholeOrRest = patternId === 'whole' || patternId === 'rest'
   const isBusy = patternId === 'busy'
   if (!isWholeOrRest && !isBusy) return 1
@@ -123,6 +132,8 @@ function ensureEachChordSounds(
   barChords: BarChord[],
   barBeats: number,
   previousChordIndex: number | null,
+  /** 直前の4拍裏で鳴らしている場合、拍1へは足さない(裏へ回す) */
+  anticipated = false,
 ): CompHit[] {
   const result = [...hits]
 
@@ -144,7 +155,8 @@ function ensureEachChordSounds(
     // 白玉と区別が付かなくなり「全音符が2回続く」の原因になる。
     // 裏から入れば伸ばしても嫌がられない、という指摘に沿って裏へ置く。
     const offbeat = offset + FORCED_HIT_OFFBEAT
-    const canUseOffbeat = result.length === 0 && offbeat < nextBeat - 0.25
+    const wantsOffbeat = result.length === 0 || (anticipated && offset === 0)
+    const canUseOffbeat = wantsOffbeat && offbeat < nextBeat - 0.25
     const beat = canUseOffbeat ? offbeat : offset
 
     result.push({
@@ -184,7 +196,16 @@ export function generateComping(
       rawHits = fallbackWholeHit(bar.barBeats)
     }
 
-    const hits = ensureEachChordSounds(rawHits, bar.chords, bar.barBeats, previousChordIndex)
+    // 直前の4拍裏で鳴らしているなら、この小節の拍1は打たない。
+    // 利用者の指摘:「4裏から1頭でうつのは0.000001割ぐらいでいいです」。
+    // 食い込んでおいて叩き直すのは、実際の弾き方としても無い。
+    // パターンごと外すと変化が消えるので、拍1の発音だけ落とす。
+    const anticipated = result.some(
+      (hit) => Math.abs(hit.startBeat - (bar.barStartBeat - 0.5)) < 0.01,
+    )
+    const trimmed = anticipated ? rawHits.filter((hit) => Math.abs(hit.beat) > 0.01) : rawHits
+
+    const hits = ensureEachChordSounds(trimmed, bar.chords, bar.barBeats, previousChordIndex, anticipated)
     previousChordIndex = bar.chords[bar.chords.length - 1].index
     hits.forEach((hit) => {
       result.push({

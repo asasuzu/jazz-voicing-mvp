@@ -274,6 +274,13 @@ export const BASS = {
 const GENERAL_DENSITIES: DensityPreset[] = ['powell', 'shell3', 'standard', 'thick']
 const POWELL_DENSITIES: DensityPreset[] = ['powell', 'shell3']
 
+/**
+ * 密度スライダーを端へ振ったときに offbeats の独占をどれだけ崩すか。
+ * 既定(50)では 2裏・4裏が9割超。端では他のパターンが出るようにして、
+ * スライダーが意味を持つようにしている。
+ */
+export const OFFBEAT_DOMINANCE_RELAXATION = 0.02
+
 /** 食い込みと前の小節の裏拍がぶつかったとき、前の発音をずらす量(拍) */
 export const COLLISION_SHIFT_BEATS = 0.5
 
@@ -292,7 +299,7 @@ export const COMP_PATTERNS: CompPattern[] = [
     id: 'charleston',
     label: 'Charleston',
     density: GENERAL_DENSITIES,
-    weight: 3,
+    weight: 0.4,
     hits: [
       { beat: 0, durationBeats: 1.5, accent: 0 },
       { beat: 1.5, durationBeats: 0.5, accent: 6 },
@@ -302,7 +309,10 @@ export const COMP_PATTERNS: CompPattern[] = [
     id: 'offbeats',
     label: 'Offbeats',
     density: GENERAL_DENSITIES,
-    weight: 2,
+    // 利用者の指摘:「このスタイルなら2裏、4裏だけでもいい(9.9割)」。
+    // リズムの変化ではなくボイシングで聴かせるスタイルなので、ここを主役にする。
+    // 密度スライダーを端へ振ったときだけ他のパターンが出る(densityMultiplier参照)。
+    weight: 99,
     hits: [
       { beat: 1.5, durationBeats: 0.5, accent: 6 },
       { beat: 3.5, durationBeats: 0.5, accent: 4 },
@@ -312,21 +322,21 @@ export const COMP_PATTERNS: CompPattern[] = [
     id: 'push',
     label: 'Push',
     density: GENERAL_DENSITIES,
-    weight: 2,
+    weight: 0.3,
     hits: [{ beat: -0.5, durationBeats: 2.0, accent: 6 }],
   },
   {
     id: 'whole',
     label: 'Whole',
     density: GENERAL_DENSITIES,
-    weight: 2,
+    weight: 0.1,
     hits: [{ beat: 0, durationBeats: 3.5, accent: 0 }],
   },
   {
     id: 'busy',
     label: 'Busy',
     density: GENERAL_DENSITIES,
-    weight: 1,
+    weight: 0.1,
     hits: [
       { beat: 0, durationBeats: 0.5, accent: 0 },
       { beat: 1.5, durationBeats: 0.5, accent: 6 },
@@ -338,7 +348,7 @@ export const COMP_PATTERNS: CompPattern[] = [
     id: 'rest',
     label: 'Rest',
     density: GENERAL_DENSITIES,
-    weight: 1,
+    weight: 0.1,
     hits: [],
   },
   {
