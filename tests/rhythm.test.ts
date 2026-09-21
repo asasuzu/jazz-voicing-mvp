@@ -123,3 +123,44 @@ describe('鳴り漏れ', () => {
     })
   })
 })
+
+describe('先取り', () => {
+  it('4裏は次の小節のコードを鳴らす', () => {
+    // 利用者の指定:「全部先取り」
+    let anticipated = 0
+    let changes = 0
+
+    for (let i = 0; i < 100; i += 1) {
+      const hits = generateComping(chords, 'thick', 50, 4)
+      for (let bar = 1; bar < 4; bar += 1) {
+        changes += 1
+        const atOffbeat = hits.find((hit) => Math.abs(hit.startBeat - (bar * 4 - 0.5)) < 0.01)
+        if (atOffbeat && atOffbeat.chordIndex === bar) anticipated += 1
+      }
+    }
+
+    const rate = anticipated / changes
+    expect(rate, `先取りされたコードチェンジが ${(rate * 100).toFixed(1)}%`).toBeGreaterThan(0.9)
+  })
+
+  it('1小節に2コードあるとき、2裏は3拍目のコードを先取りする', () => {
+    const twoChordBar = parseProgression('Dm7 G7 | Cmaj7', 4)
+    for (let i = 0; i < 50; i += 1) {
+      const hits = generateComping(twoChordBar, 'thick', 50, 4)
+      const atOffbeat = hits.find((hit) => Math.abs(hit.startBeat - 1.5) < 0.01)
+      if (!atOffbeat) continue
+      // 1.5拍の半拍後(2拍)からG7が始まるので、そこはG7になる
+      expect(atOffbeat.chordIndex, '2拍裏がG7を先取りしていない').toBe(1)
+    }
+  })
+
+  it('最後の小節は先取りする先が無いので、そのままのコードを鳴らす', () => {
+    // ループでは次の周が別のテイクなので、先取りすると違うボイシングが
+    // 半拍だけ挟まって不自然になる。
+    for (let i = 0; i < 50; i += 1) {
+      const hits = generateComping(chords, 'thick', 50, 4)
+      const last = hits[hits.length - 1]
+      expect(last.chordIndex).toBe(chords.length - 1)
+    }
+  })
+})

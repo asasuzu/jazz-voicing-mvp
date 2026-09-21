@@ -104,74 +104,49 @@ function groupByBar(chords: ParsedChord[]): { barStartBeat: number; barBeats: nu
   return bars
 }
 
-/** hitの拍位置から、小節内のどのコードに属するかを決める。押し込み(負)は次の小節の最初のコードとして扱う。 */
-function chordIndexForOffset(barChords: BarChord[], offset: number): number {
-  if (offset < 0) return barChords[0].index
-  let result = barChords[0].index
-  barChords.forEach((entry) => {
-    if (entry.offset <= offset) result = entry.index
-  })
-  return result
-}
-
-/**
- * 新しく出てきたコードが一度も鳴らないまま終わるのを防ぐ。
- *
- * 以前は「各コードの開始位置に発音が無ければ足す」という実装だったが、
- * 1小節1コードだと必ず拍0に発音が足されるので、**全小節が拍1から始まる**
- * 状態になっていた(実測100%)。Offbeats も Push も Rest も、拍1から始まる
- * 音に化けていて、Restは一度も休んでいなかった。
- *
- * 正しくは「そのコードが区間内のどこかで鳴れば良い」。位置は問わない。
- * - 食い込み(負の拍)でそのコードが鳴るなら、小節頭に足す必要は無い
- * - 前の小節から同じコードが続いているなら、鳴らし直さなくても良い
- *   (弾き手が1小節休むのは普通のこと)
- */
-function ensureEachChordSounds(
-  hits: CompHit[],
-  barChords: BarChord[],
-  barBeats: number,
-  previousChordIndex: number | null,
-  /** 直前の4拍裏で鳴らしている場合、拍1へは足さない(裏へ回す) */
-  anticipated = false,
-): CompHit[] {
-  const result = [...hits]
-
-  barChords.forEach(({ offset, index }, position) => {
-    // 前の小節から続いているコードは、鳴らし直さなくてよい
-    if (position === 0 && index === previousChordIndex) return
-
-    const nextOffset = barChords[position + 1]?.offset ?? barBeats
-    const alreadySounds = result.some((hit) => {
-      const target = chordIndexForOffset(barChords, hit.beat)
-      return target === index && hit.beat < nextOffset
-    })
-    if (alreadySounds) return
-
-    const laterBeats = result.filter((hit) => hit.beat > offset).map((hit) => hit.beat)
-    const nextBeat = laterBeats.length > 0 ? Math.min(...laterBeats) : barBeats
-
-    // 鳴らす位置。Rest のように発音がまったく無いパターンで拍0に足すと、
-    // 白玉と区別が付かなくなり「全音符が2回続く」の原因になる。
-    // 裏から入れば伸ばしても嫌がられない、という指摘に沿って裏へ置く。
-    const offbeat = offset + FORCED_HIT_OFFBEAT
-    const wantsOffbeat = result.length === 0 || (anticipated && offset === 0)
-    const canUseOffbeat = wantsOffbeat && offbeat < nextBeat - 0.25
-    const beat = canUseOffbeat ? offbeat : offset
-
-    result.push({
-      beat,
-      durationBeats: Math.max(0.25, nextBeat - beat),
-      accent: canUseOffbeat ? FORCED_HIT_OFFBEAT_ACCENT : 0,
-    })
-  })
-
-  return result.sort((a, b) => a.beat - b.beat)
-}
-
 /** 3拍子・6拍子は第2段階まで`whole`相当にフォールバックする(仕様書§7) */
 function fallbackWholeHit(barBeats: number): CompHit[] {
   return [{ beat: 0, durationBeats: Math.max(0.5, barBeats - 0.5), accent: 0 }]
+}
+
+/** コードチェンジの絶対拍位置。先取りの判定に使う。 */
+interface ChordChange {
+  beat: number
+  index: number
+}
+
+function chordChanges(chords: ParsedChord[]): ChordChange[] {
+  const changes: ChordChange[] = []
+  let cursor = 0
+  chords.forEach((chord, index) => {
+    changes.push({ beat: cursor, index })
+    cursor += chord.beats
+  })
+  return changes
+}
+
+/**
+ * 発音をどのコードに割り当てるか。
+ *
+ * **半拍後にコードが変わるなら、そのコードを先取りする。**
+ * 利用者の指定:「全部先取り」。4拍裏は次の小節のコード、1小節に2コードある
+ * 小節の2拍裏は3拍目から始まるコード、という具合に、裏拍がコードチェンジの
+ * 直前にあるときは常に次のコードを鳴らす。ベースも4拍目で次のルートへ
+ * 向かっているので、そこと揃う。
+ *
+ * 進行の最後の小節だけは先取りする先が無いので、そのままのコードを鳴らす。
+ * (ループでは次の周のテイクが別なので、先取りすると違うボイシングが
+ * 半拍だけ挟まって不自然になる)
+ */
+function chordIndexForBeat(changes: ChordChange[], beat: number): number {
+  const anticipating = changes.find((change) => Math.abs(change.beat - (beat + 0.5)) < 0.01)
+  if (anticipating) return anticipating.index
+
+  let result = changes[0].index
+  changes.forEach((change) => {
+    if (change.beat <= beat + 0.01) result = change.index
+  })
+  return result
 }
 
 export function generateComping(
@@ -181,35 +156,33 @@ export function generateComping(
   beatsPerBar: number,
 ): CompingHit[] {
   const bars = groupByBar(chords)
-  const result: CompingHit[] = []
+  const changes = chordChanges(chords)
+  const totalBeats = chords.reduce((sum, chord) => sum + chord.beats, 0)
+
+  // 1. パターンを選んで、絶対拍位置の発音リストを作る
+  const raw: { startBeat: number; durationBeats: number; accent: number }[] = []
   let previousPatternId: string | null = null
-  let previousChordIndex: number | null = null
 
   bars.forEach((bar, barPosition) => {
-    const isFirstBar = barPosition === 0
-    let rawHits: CompHit[]
+    let barHits: CompHit[]
     if (beatsPerBar === 4) {
-      const pattern = choosePattern(density, rhythmDensity, previousPatternId, isFirstBar)
+      const pattern = choosePattern(density, rhythmDensity, previousPatternId, barPosition === 0)
       previousPatternId = pattern.id
-      rawHits = pattern.hits
+      barHits = pattern.hits
     } else {
-      rawHits = fallbackWholeHit(bar.barBeats)
+      barHits = fallbackWholeHit(bar.barBeats)
     }
 
     // 直前の4拍裏で鳴らしているなら、この小節の拍1は打たない。
     // 利用者の指摘:「4裏から1頭でうつのは0.000001割ぐらいでいいです」。
-    // 食い込んでおいて叩き直すのは、実際の弾き方としても無い。
     // パターンごと外すと変化が消えるので、拍1の発音だけ落とす。
-    const anticipated = result.some(
+    const anticipated = raw.some(
       (hit) => Math.abs(hit.startBeat - (bar.barStartBeat - 0.5)) < 0.01,
     )
-    const trimmed = anticipated ? rawHits.filter((hit) => Math.abs(hit.beat) > 0.01) : rawHits
+    const trimmed = anticipated ? barHits.filter((hit) => Math.abs(hit.beat) > 0.01) : barHits
 
-    const hits = ensureEachChordSounds(trimmed, bar.chords, bar.barBeats, previousChordIndex, anticipated)
-    previousChordIndex = bar.chords[bar.chords.length - 1].index
-    hits.forEach((hit) => {
-      result.push({
-        chordIndex: chordIndexForOffset(bar.chords, hit.beat),
+    trimmed.forEach((hit) => {
+      raw.push({
         startBeat: bar.barStartBeat + hit.beat,
         durationBeats: hit.durationBeats,
         accent: hit.accent,
@@ -217,7 +190,59 @@ export function generateComping(
     })
   })
 
+  // 2. コードへ割り当てる(先取りを含む)
+  let result: CompingHit[] = raw.map((hit) => ({
+    chordIndex: chordIndexForBeat(changes, hit.startBeat),
+    startBeat: hit.startBeat,
+    durationBeats: hit.durationBeats,
+    accent: hit.accent,
+  }))
+
+  // 3. 一度も鳴らないコードが出たら足す
+  result = ensureEveryChordSounds(result, changes, totalBeats)
+
+  // 4. 同じ瞬間の重なりを解消
   return resolveCollisions(result.sort((a, b) => a.startBeat - b.startBeat))
+}
+
+/**
+ * 一度も鳴らないコードが出ないようにする。
+ *
+ * 先取りを入れると、例えば「Dm7 G7」の小節で2拍裏がG7の先取りになり、
+ * Dm7が鳴らないまま終わることがある。位置は問わないので、その区間の中で
+ * 空いているところへ1発足す。裏を優先する(拍1に足すと、直前の先取りと
+ * 合わせて「4裏から1頭」になってしまう)。
+ */
+function ensureEveryChordSounds(
+  hits: CompingHit[],
+  changes: ChordChange[],
+  totalBeats: number,
+): CompingHit[] {
+  const result = [...hits]
+
+  changes.forEach((change, position) => {
+    if (result.some((hit) => hit.chordIndex === change.index)) return
+
+    const nextBeat = changes[position + 1]?.beat ?? totalBeats
+    const offbeat = change.beat + FORCED_HIT_OFFBEAT
+    const occupied = (beat: number) =>
+      result.some((hit) => Math.abs(hit.startBeat - beat) < 0.01)
+
+    const candidates = [offbeat, change.beat + 0.5, change.beat]
+    const beat = candidates.find((value) => value < nextBeat - 0.2 && !occupied(value)) ?? change.beat
+
+    const laterBeats = result.filter((hit) => hit.startBeat > beat).map((hit) => hit.startBeat)
+    const until = laterBeats.length > 0 ? Math.min(...laterBeats) : nextBeat
+
+    result.push({
+      chordIndex: change.index,
+      startBeat: beat,
+      durationBeats: Math.max(0.25, Math.min(until - beat, nextBeat - beat)),
+      accent: Math.abs(beat - change.beat) > 0.01 ? FORCED_HIT_OFFBEAT_ACCENT : 0,
+    })
+  })
+
+  return result.sort((a, b) => a.startBeat - b.startBeat)
 }
 
 /**
