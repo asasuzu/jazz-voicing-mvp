@@ -134,13 +134,20 @@ function chordChanges(chords: ParsedChord[]): ChordChange[] {
  * 直前にあるときは常に次のコードを鳴らす。ベースも4拍目で次のルートへ
  * 向かっているので、そこと揃う。
  *
- * 進行の最後の小節だけは先取りする先が無いので、そのままのコードを鳴らす。
- * (ループでは次の周のテイクが別なので、先取りすると違うボイシングが
- * 半拍だけ挟まって不自然になる)
+ * 最後の小節の4拍裏は、**次の周の1小節目**を先取りする(進行は繰り返す前提)。
+ * ここを先取りしないと、ループの継ぎ目だけ他と違う入り方になる。
+ *
+ * ループでは次の周が別のテイクなので、先取りに使うボイシングと、次の周が
+ * 実際に鳴らすボイシングは違う。ただし裏拍しか打たない今のスタイルでは、
+ * 次に同じコードが鳴るのは2拍後(次の小節の2拍裏)なので、同じコードの
+ * 弾き直しとして自然に聞こえる。半拍後に別のボイシングが来るわけではない。
  */
-function chordIndexForBeat(changes: ChordChange[], beat: number): number {
+function chordIndexForBeat(changes: ChordChange[], beat: number, totalBeats: number): number {
   const anticipating = changes.find((change) => Math.abs(change.beat - (beat + 0.5)) < 0.01)
   if (anticipating) return anticipating.index
+
+  // 進行の終わりをまたぐ先取り(4小節目の4裏 → 1小節目)
+  if (Math.abs(totalBeats - (beat + 0.5)) < 0.01) return changes[0].index
 
   let result = changes[0].index
   changes.forEach((change) => {
@@ -192,7 +199,7 @@ export function generateComping(
 
   // 2. コードへ割り当てる(先取りを含む)
   let result: CompingHit[] = raw.map((hit) => ({
-    chordIndex: chordIndexForBeat(changes, hit.startBeat),
+    chordIndex: chordIndexForBeat(changes, hit.startBeat, totalBeats),
     startBeat: hit.startBeat,
     durationBeats: hit.durationBeats,
     accent: hit.accent,

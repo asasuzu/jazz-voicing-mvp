@@ -154,13 +154,20 @@ describe('先取り', () => {
     }
   })
 
-  it('最後の小節は先取りする先が無いので、そのままのコードを鳴らす', () => {
-    // ループでは次の周が別のテイクなので、先取りすると違うボイシングが
-    // 半拍だけ挟まって不自然になる。
-    for (let i = 0; i < 50; i += 1) {
+  it('最後の小節の4裏は、次の周の1小節目を先取りする', () => {
+    // 利用者の指摘:「4小節目から1小節目のときに先取りできてない」。
+    // 進行は繰り返す前提なので、ここも他の小節と同じように先取りする。
+    let anticipated = 0
+    let total = 0
+    for (let i = 0; i < 100; i += 1) {
       const hits = generateComping(chords, 'thick', 50, 4)
-      const last = hits[hits.length - 1]
-      expect(last.chordIndex).toBe(chords.length - 1)
+      const atSeam = hits.find((hit) => Math.abs(hit.startBeat - 15.5) < 0.01)
+      if (!atSeam) continue
+      total += 1
+      if (atSeam.chordIndex === 0) anticipated += 1
     }
+    expect(total).toBeGreaterThan(50)
+    const rate = anticipated / total
+    expect(rate, `継ぎ目の先取りが ${(rate * 100).toFixed(1)}%`).toBeGreaterThan(0.9)
   })
 })
