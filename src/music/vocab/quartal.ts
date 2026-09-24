@@ -25,6 +25,7 @@ const CHORD_SCALES: Partial<Record<ChordQuality, number[]>> = {
   major7: [0, 2, 4, 5, 7, 9, 11], // Ionian
   major: [0, 2, 4, 5, 7, 9, 11],
   minor7: [0, 2, 3, 5, 7, 9, 10], // Dorian
+  minor6: [0, 2, 3, 5, 7, 9, 11], // Melodic minor
   sus7: [0, 2, 4, 5, 7, 9, 10], // Mixolydian
   minorMajor7: [0, 2, 3, 5, 7, 9, 11], // Melodic minor
 }
@@ -44,6 +45,9 @@ const AVOID_OFFSETS: Partial<Record<ChordQuality, number[]>> = {
   major7: [5],
   major: [5],
   dominant7: [5],
+  // m6は7度を持たないコード。メロディックマイナーから積むと長7度が混ざり、
+  // m6ではなくmMaj7の響きになる。
+  minor6: [11],
 }
 
 /** スケール上を3ステップ上がる = 4度。これをn回繰り返して積む。 */

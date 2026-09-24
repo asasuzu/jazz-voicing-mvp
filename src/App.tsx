@@ -10,17 +10,11 @@ import { downloadMidi } from './music/render/midi'
 import { buildPerformance, chordIndexAtBeat } from './music/perform'
 import type { PerformOptions } from './music/perform'
 import type { SwingSetting } from './music/humanize'
+import { DEFAULT_PRESET, PROGRESSION_PRESETS } from './music/presets'
 import { generateTakes } from './music/take'
 import { spellChordDegree } from './music/theory'
 import { voicingDistance } from './music/voicings'
 import type { DensityPreset, Take, Voicing } from './music/types'
-
-/**
- * 4小節で、最後のG7が1小節目のCmaj7へ戻る形にしてある。
- * 3小節だとループしたときに耳が小節を数えられず、「今どこを弾いているか
- * わからない」状態になる(docs/FEEDBACK_01.md §1)。
- */
-const DEFAULT_PROGRESSION = 'Cmaj7 | A7alt | Dm7 | G7'
 
 const DENSITY_OPTIONS: { id: DensityPreset; label: string }[] = [
   { id: 'powell', label: 'Powell · 2音、右手を空ける' },
@@ -30,7 +24,7 @@ const DENSITY_OPTIONS: { id: DensityPreset; label: string }[] = [
 ]
 
 function App() {
-  const [progression, setProgression] = useState(DEFAULT_PROGRESSION)
+  const [progression, setProgression] = useState(DEFAULT_PRESET.progression)
   const [density, setDensity] = useState<DensityPreset>('thick')
   const [withBass, setWithBass] = useState(true)
   const [strict, setStrict] = useState(false)
@@ -115,16 +109,22 @@ function App() {
 
   const changeTempo = (value: number) => setTempo(Math.min(300, Math.max(40, Math.round(value))))
 
-  const generate = () => {
+  const generate = (source = progression) => {
     stopLoop()
     try {
       setError('')
-      const [next] = generateTakes(progression, generateOptions)
+      const [next] = generateTakes(source, generateOptions)
       setTake(next)
     } catch (caught) {
       setTake(null)
       setError(caught instanceof Error ? caught.message : '生成に失敗しました。')
     }
+  }
+
+  /** 例を選んだら、入力欄を書き換えてすぐ1テイク作る。選んだあとも入力欄は自由に直せる。 */
+  const choosePreset = (value: string) => {
+    setProgression(value)
+    generate(value)
   }
 
   const stopLoop = () => {
@@ -203,6 +203,23 @@ function App() {
       </header>
 
       <section className="panel controls">
+        <div className="field field-wide">
+          <span>例から選ぶ</span>
+          <div className="preset-list">
+            {PROGRESSION_PRESETS.map((preset) => (
+              <button
+                type="button"
+                key={preset.id}
+                className={`preset${preset.progression === progression ? ' active' : ''}`}
+                onClick={() => choosePreset(preset.progression)}
+              >
+                <strong>{preset.name}</strong>
+                <small>{preset.description}</small>
+              </button>
+            ))}
+          </div>
+        </div>
+
         <label className="field field-wide">
           <span>Chord progression</span>
           <input
@@ -345,9 +362,9 @@ function App() {
         </div>
 
         <div className="action-row">
-          <button className="primary" onClick={generate}>Generate take</button>
+          <button className="primary" onClick={() => generate()}>Generate take</button>
           {take && (
-            <button className="secondary" onClick={generate}>Another take</button>
+            <button className="secondary" onClick={() => generate()}>Another take</button>
           )}
         </div>
 

@@ -74,6 +74,7 @@ const DEFINING_TONES: Record<ChordQuality, number[][]> = {
   major: [[4, 9], [4, 11]],
   major7: [[4, 11], [4, 9]],
   minor7: [[3, 10]],
+  minor6: [[3, 9]],
   dominant7: [[4, 10]],
   halfDiminished: [[3, 10], [3, 6]],
   diminished7: [[3, 9]],

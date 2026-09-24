@@ -88,6 +88,10 @@ function detectQuality(rawSuffix: string): ChordQuality {
   if (/^(m7b5|m7\(b5\)|ø7?|half[- ]?dim)/i.test(unicodeNormalized)) return 'halfDiminished'
   if (/^(dim7|o7|°7)/i.test(unicodeNormalized)) return 'diminished7'
   if (/^(7sus4|7sus|sus7|sus4)/i.test(unicodeNormalized)) return 'sus7'
+  // 6thコード。これを判定しないと、末尾の「どれにも当たらなければdominant7」に落ちて
+  // C6がC7として鳴っていた。m6はm7と違って7度を持たないので別の種類にする。
+  if (/^(m6|min6|-6)/i.test(unicodeNormalized)) return 'minor6'
+  if (/^(6|maj6|M6)/.test(unicodeNormalized)) return 'major'
   if (/^(maj7|maj9)/i.test(unicodeNormalized) || /^(M7|M9|Δ7?|△7?)/.test(unicodeNormalized)) return 'major7'
   if (/^(m7|min7|-7|m9|min9|-9|m11|min11|-11)/i.test(unicodeNormalized)) return 'minor7'
   if (/^(7|9|13)/.test(unicodeNormalized)) return 'dominant7'

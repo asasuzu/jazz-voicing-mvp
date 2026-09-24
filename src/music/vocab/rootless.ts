@@ -20,6 +20,7 @@ const QUALITY_VOCAB: Record<ChordQuality, QualityVocab> = {
   major: { guideTones: ['3', '6'], tensionPool: ['5', '9', '13', '3'] },
   major7: { guideTones: ['3', '7'], tensionPool: ['5', '9', '13', '#11'] },
   minor7: { guideTones: ['b3', 'b7'], tensionPool: ['5', '9', '11', '13'] },
+  minor6: { guideTones: ['b3', '6'], tensionPool: ['5', '9', '11', 'b3'] },
   // ドミナントのプールにナチュラル5度を入れない。利用者いわく
   // 「ドミナントで5thはかなり使わん」。rootlessでは5度を13度へ置き換えるのが
   // 実用的(VOICING_RESEARCH.md §3, docs/MUSICAL_RULES.md)。

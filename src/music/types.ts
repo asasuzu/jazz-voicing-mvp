@@ -2,6 +2,7 @@ export type ChordQuality =
   | 'major'
   | 'major7'
   | 'minor7'
+  | 'minor6'
   | 'dominant7'
   | 'halfDiminished'
   | 'diminished7'

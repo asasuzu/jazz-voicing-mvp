@@ -193,6 +193,7 @@ export const BASS_CHORD_TONES: Record<ChordQuality, { third: number; fifth: numb
   major: { third: 4, fifth: 7, seventh: null },
   major7: { third: 4, fifth: 7, seventh: 11 },
   minor7: { third: 3, fifth: 7, seventh: 10 },
+  minor6: { third: 3, fifth: 7, seventh: null },
   dominant7: { third: 4, fifth: 7, seventh: 10 },
   halfDiminished: { third: 3, fifth: 6, seventh: 10 },
   diminished7: { third: 3, fifth: 6, seventh: 9 },
@@ -204,6 +205,7 @@ export const BASS_SCALES: Record<ChordQuality, number[]> = {
   major: [0, 2, 4, 5, 7, 9, 11], // Ionian
   major7: [0, 2, 4, 5, 7, 9, 11], // Ionian
   minor7: [0, 2, 3, 5, 7, 9, 10], // Dorian
+  minor6: [0, 2, 3, 5, 7, 9, 11], // Melodic minor。トニックのm6はこれが定番
   dominant7: [0, 2, 4, 5, 7, 9, 10], // Mixolydian
   halfDiminished: [0, 1, 3, 5, 6, 8, 10], // Locrian
   diminished7: [0, 2, 3, 5, 6, 8, 9, 11], // Whole-half diminished

@@ -33,7 +33,9 @@ function buildVoicing(rootMidi: number, degrees: string[], family: string, label
  */
 function thirdDegree(quality: ChordQuality): string {
   if (quality === 'sus7') return '11'
-  return quality === 'minor7' || quality === 'halfDiminished' || quality === 'minorMajor7' ? 'b3' : '3'
+  return quality === 'minor7' || quality === 'minor6' || quality === 'halfDiminished' || quality === 'minorMajor7'
+    ? 'b3'
+    : '3'
 }
 
 /** R10は3度をオクターブ上へ置く形。3度を持たないsus7には作らない。 */
@@ -42,16 +44,16 @@ function tenthDegree(quality: ChordQuality): string | null {
   return thirdDegree(quality) === 'b3' ? 'b10' : '10'
 }
 
-/** major7/minorMajor7は長7度、dominant7/minor7/sus7/halfDiminishedは短7度。plain majorとdiminished7は無し。 */
+/** major7/minorMajor7は長7度、dominant7/minor7/sus7/halfDiminishedは短7度。plain major/minor6とdiminished7は無し。 */
 function seventhDegree(quality: ChordQuality): string | null {
   if (quality === 'major7' || quality === 'minorMajor7') return '7'
   if (quality === 'dominant7' || quality === 'minor7' || quality === 'sus7' || quality === 'halfDiminished') return 'b7'
   return null
 }
 
-// R6はトニックのメジャー系のみ。minor7に当てると Dm7 が D+B になり、
+// R6はトニックのメジャー系と、6度がコードを決めるm6のみ。minor7に当てると Dm7 が D+B になり、
 // コードを決める b7 が消えて Dm6 の響きになる(docs/FEEDBACK_01.md §4)。
-const SIXTH_QUALITIES: ChordQuality[] = ['major', 'major7']
+const SIXTH_QUALITIES: ChordQuality[] = ['major', 'major7', 'minor6']
 
 function buildDiminished(rootMidi: number, variant: 'powell' | 'shell3'): Voicing[] {
   if (variant === 'powell') {
