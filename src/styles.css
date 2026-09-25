@@ -27,7 +27,7 @@ input, select { width: 100%; color: #f3efe8; background: #0d0d0e; border: 1px so
 input:focus, select:focus { border-color: #8b7961; box-shadow: 0 0 0 3px rgba(139,121,97,.12); }
 .field-wide input { padding: 16px 17px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 16px; letter-spacing: .02em; }
 select, input[type="number"] { padding: 12px 13px; }
-.control-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+.control-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
 
 .preset-list { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
 .preset { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; min-height: 64px; text-align: left; background: #141314; border: 1px solid #322f31; color: #d6d0c8; }

@@ -109,12 +109,21 @@ function scheduleNote(ctx: AudioContext, midi: number, start: number, duration: 
   }
 }
 
-/** 1つのボイシングだけを単発で試聴する（カードの「Play chord」ボタン用） */
-export async function playChord(midi: number[], duration = 1.15): Promise<void> {
+/**
+ * 1つのボイシングだけを単発で試聴する（カードの「Play chord」ボタン用）。
+ * arpeggioStepSecondsを渡すと、下から順にその間隔で転がす。音は最後まで伸ばす。
+ */
+export async function playChord(midi: number[], duration = 1.15, arpeggioStepSeconds = 0): Promise<void> {
   const ctx = getAudioContext()
   if (ctx.state === 'suspended') await ctx.resume()
   const start = ctx.currentTime + 0.03
-  midi.forEach((note) => scheduleNote(ctx, note, start, duration, gainFromVelocity(82, AUDIO.previewGainBonus)))
+  const sorted = [...midi].sort((a, b) => a - b)
+  const rollSeconds = arpeggioStepSeconds * Math.max(0, sorted.length - 1)
+  sorted.forEach((note, index) => {
+    const noteStart = start + index * arpeggioStepSeconds
+    const noteDuration = duration + rollSeconds - index * arpeggioStepSeconds
+    scheduleNote(ctx, note, noteStart, noteDuration, gainFromVelocity(82, AUDIO.previewGainBonus))
+  })
 }
 
 export function stopPlayback(): void {

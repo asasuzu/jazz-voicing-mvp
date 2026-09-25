@@ -151,3 +151,49 @@ describe('再生位置からコードを割り出す', () => {
     expect(chordIndexAtBeat(chords, -1)).toBeNull()
   })
 })
+
+describe('アルペジオ(タラララ〜)', () => {
+  const [take] = generateTakes(PROGRESSION, takeOptions)
+  const chords = take.chords
+  const performance = buildPerformance(take, { ...performOptions, choruses: 1, pianoStyle: 'arpeggio' })
+  const piano = performance.events.filter((e) => e.track === 'piano')
+
+  const chordStarts = chords.map((_, index) => chords.slice(0, index).reduce((sum, c) => sum + c.beats, 0))
+
+  it('コードごとに、下から順に1音ずつ鳴らす', () => {
+    chords.forEach((chord, index) => {
+      const start = chordStarts[index]
+      const notes = piano
+        .filter((e) => e.startBeat >= start - 1e-6 && e.startBeat < start + chord.beats - 1e-6)
+        .sort((a, b) => a.startBeat - b.startBeat)
+      const voicing = take.voicings[index]
+      expect(notes.map((e) => e.midi)).toEqual([...voicing.left, ...voicing.right].sort((a, b) => a - b))
+      // 同時に鳴らす音が無い = 転がしている
+      expect(new Set(notes.map((e) => e.startBeat.toFixed(4))).size).toBe(notes.length)
+      expect(notes[0].startBeat).toBeCloseTo(start, 4)
+    })
+  })
+
+  it('鳴らした音は次のコードまで伸ばす', () => {
+    chords.forEach((chord, index) => {
+      const end = chordStarts[index] + chord.beats
+      piano
+        .filter((e) => e.startBeat >= chordStarts[index] - 1e-6 && e.startBeat < end - 1e-6)
+        .forEach((e) => expect(e.startBeat + e.durationBeats).toBeCloseTo(end, 4))
+    })
+  })
+
+  it('2拍しかないコードでも、転がし終わってから次のコードが来る', () => {
+    chords.forEach((chord, index) => {
+      const notes = piano.filter(
+        (e) => e.startBeat >= chordStarts[index] - 1e-6 && e.startBeat < chordStarts[index] + chord.beats - 1e-6,
+      )
+      const last = Math.max(...notes.map((e) => e.startBeat)) - chordStarts[index]
+      expect(last).toBeLessThanOrEqual(chord.beats * 0.75 + 1e-6)
+    })
+  })
+
+  it('ベースは今までどおり鳴る', () => {
+    expect(performance.events.some((e) => e.track === 'bass')).toBe(true)
+  })
+})

@@ -1,9 +1,9 @@
 import { generateBassLine } from './bass'
 import { generateComping } from './comping'
-import { COMPING_DENSITY_SLIDER, VELOCITY } from './constants'
+import { ARPEGGIO, COMPING_DENSITY_SLIDER, VELOCITY } from './constants'
 import { humanize } from './humanize'
 import type { SwingSetting } from './humanize'
-import type { DensityPreset, ParsedChord, Performance, PerformanceEvent, Take, Voicing } from './types'
+import type { DensityPreset, ParsedChord, Performance, PerformanceEvent, PianoStyle, Take, Voicing } from './types'
 
 /**
  * Take → Performance の本実装(Step4)。コンピング(comping.ts)とウォーキングベース
@@ -19,6 +19,8 @@ export interface PerformOptions {
   swing: SwingSetting
   density: DensityPreset
   choruses: number
+  /** 省略時は block(今までどおりのコンピング) */
+  pianoStyle?: PianoStyle
   /** コンピングの密度スライダー(0〜100)。省略時はCOMPING_DENSITY_SLIDER.default。 */
   rhythmDensity?: number
   /**
@@ -36,6 +38,41 @@ function pianoBaseVelocity(density: DensityPreset): number {
 /** 1コーラス分のブロックコード進行の長さ(拍)。コーラス連結のオフセット計算に使う。 */
 function chorusLength(take: Take): number {
   return take.chords.reduce((sum, chord) => sum + chord.beats, 0)
+}
+
+/**
+ * アルペジオで、下から何番目の音をコード頭から何拍後に鳴らすか。
+ * 基本はARPEGGIO.stepBeats間隔。コードが短くて並べきれないときは詰める。
+ */
+export function arpeggioOffsets(noteCount: number, chordBeats: number): number[] {
+  if (noteCount <= 1) return [0]
+  const step = Math.min(ARPEGGIO.stepBeats, (chordBeats * ARPEGGIO.fitRatio) / (noteCount - 1))
+  return Array.from({ length: noteCount }, (_, index) => index * step)
+}
+
+/**
+ * コードが変わるたびに1回、下から順に転がして、次のコードまで伸ばす。
+ * コンピングのリズム(先取りなど)は使わない。転がし始めはコードの頭に揃える。
+ */
+function arpeggioEvents(take: Take, offset: number, velocity: number): PerformanceEvent[] {
+  const events: PerformanceEvent[] = []
+  let chordStart = 0
+  take.chords.forEach((chord, chordIndex) => {
+    const voicing = take.voicings[chordIndex]
+    const notes = [...voicing.left, ...voicing.right].sort((a, b) => a - b)
+    const offsets = arpeggioOffsets(notes.length, chord.beats)
+    notes.forEach((midi, index) => {
+      events.push({
+        track: 'piano',
+        midi,
+        startBeat: offset + chordStart + offsets[index],
+        durationBeats: chord.beats - offsets[index],
+        velocity,
+      })
+    })
+    chordStart += chord.beats
+  })
+  return events
 }
 
 export function buildPerformance(take: Take, options: PerformOptions): Performance {
@@ -56,7 +93,13 @@ export function buildPerformance(take: Take, options: PerformOptions): Performan
     const previousVoicing = lastTake.voicings[lastTake.voicings.length - 1]
     const chorusTake = chorus === 0 ? take : options.takeForChorus?.(chorus, previousVoicing) ?? take
     lastTake = chorusTake
-    const compingHits = generateComping(chorusTake.chords, options.density, rhythmDensity, options.beatsPerBar)
+    if (options.pianoStyle === 'arpeggio') {
+      events.push(...arpeggioEvents(chorusTake, offset, baseVelocity))
+    }
+    const compingHits =
+      options.pianoStyle === 'arpeggio'
+        ? []
+        : generateComping(chorusTake.chords, options.density, rhythmDensity, options.beatsPerBar)
     compingHits.forEach((hit) => {
       const voicing = chorusTake.voicings[hit.chordIndex]
       ;[...voicing.left, ...voicing.right].forEach((midi) => {

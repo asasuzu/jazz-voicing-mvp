@@ -7,6 +7,7 @@ import {
   stopPlayback,
 } from './music/render/audio'
 import { downloadMidi } from './music/render/midi'
+import { ARPEGGIO } from './music/constants'
 import { buildPerformance, chordIndexAtBeat } from './music/perform'
 import type { PerformOptions } from './music/perform'
 import type { SwingSetting } from './music/humanize'
@@ -14,7 +15,12 @@ import { DEFAULT_PRESET, PROGRESSION_PRESETS } from './music/presets'
 import { generateTakes } from './music/take'
 import { spellChordDegree } from './music/theory'
 import { voicingDistance } from './music/voicings'
-import type { DensityPreset, Take, Voicing } from './music/types'
+import type { DensityPreset, PianoStyle, Take, Voicing } from './music/types'
+
+const PIANO_STYLE_OPTIONS: { id: PianoStyle; label: string }[] = [
+  { id: 'block', label: 'ジャンジャン · リズムで刻む(既定)' },
+  { id: 'arpeggio', label: 'タラララ〜 · 下から順に転がす' },
+]
 
 const DENSITY_OPTIONS: { id: DensityPreset; label: string }[] = [
   { id: 'powell', label: 'Powell · 2音、右手を空ける' },
@@ -26,6 +32,7 @@ const DENSITY_OPTIONS: { id: DensityPreset; label: string }[] = [
 function App() {
   const [progression, setProgression] = useState(DEFAULT_PRESET.progression)
   const [density, setDensity] = useState<DensityPreset>('thick')
+  const [pianoStyle, setPianoStyle] = useState<PianoStyle>('block')
   const [withBass, setWithBass] = useState(true)
   const [strict, setStrict] = useState(false)
   const [swingMode, setSwingMode] = useState<'auto' | 'manual'>('auto')
@@ -51,8 +58,8 @@ function App() {
   )
 
   const performOptions: PerformOptions = useMemo(
-    () => ({ tempo, beatsPerBar, withBass, strict, swing, density, choruses }),
-    [tempo, beatsPerBar, withBass, strict, swing, density, choruses],
+    () => ({ tempo, beatsPerBar, withBass, strict, swing, density, choruses, pianoStyle }),
+    [tempo, beatsPerBar, withBass, strict, swing, density, choruses, pianoStyle],
   )
 
   // ループ再生中にテンポ/設定を動かしても次のコーラスから反映させる
@@ -278,6 +285,16 @@ function App() {
           </label>
 
           <label className="field">
+            <span>弾き方</span>
+            <select value={pianoStyle} onChange={(event) => setPianoStyle(event.target.value as PianoStyle)}>
+              {PIANO_STYLE_OPTIONS.map((option) => (
+                <option key={option.id} value={option.id}>{option.label}</option>
+              ))}
+            </select>
+            <small>ループ再生中に変えると、次の周から反映されます。</small>
+          </label>
+
+          <label className="field">
             <span>拍子(1小節の拍数)</span>
             <select value={beatsPerBar} onChange={(event) => setBeatsPerBar(Number(event.target.value))}>
               <option value={3}>3拍子</option>
@@ -465,7 +482,13 @@ function App() {
                     <div className="degrees">{voicing.degrees.join(' · ')}</div>
                     <button
                       className="play-one"
-                      onClick={() => playChord([...voicing.left, ...voicing.right])}
+                      onClick={() =>
+                        playChord(
+                          [...voicing.left, ...voicing.right],
+                          undefined,
+                          pianoStyle === 'arpeggio' ? (60 / tempo) * ARPEGGIO.stepBeats : 0,
+                        )
+                      }
                     >
                       Play chord
                     </button>

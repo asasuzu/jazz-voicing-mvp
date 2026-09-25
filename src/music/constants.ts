@@ -179,6 +179,17 @@ export const TIMING = {
  * velocity → gain の変換係数が必要になった。
  * 値は既存 MVP 0.1 の試聴音量（0.11〜0.13）と近い聴感になるよう決め打ち。
  */
+/**
+ * アルペジオ(「タラララ〜」)の設定。利用者の最初の要望。
+ * 1音ずつの間隔は「1拍を3つに割った長さ」から始めて、感想を聞いて調整する。
+ * コードが短くて全部並べきれないときは、コードの長さのfitRatioまでに詰める
+ * (最後の音が鳴った直後に次のコードが来ると、転がした感じが出ない)。
+ */
+export const ARPEGGIO = {
+  stepBeats: 1 / 3,
+  fitRatio: 0.75,
+}
+
 export const AUDIO = {
   gainPerVelocity: 0.00105, // velocity 82 (旧デフォルト) で概ね 0.086〜0.11 相当になる
   previewGainBonus: 1.25,   // 単発試聴(Play chord)は少し大きめに鳴らす

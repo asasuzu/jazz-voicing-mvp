@@ -66,6 +66,8 @@ export interface RangePreset {
 export type TrackId = 'piano' | 'bass'
 export type Hand = 'left' | 'right'
 export type DensityPreset = 'powell' | 'shell3' | 'standard' | 'thick'
+/** ピアノの弾き方。block=和音をリズムで刻む、arpeggio=コードごとに下から1音ずつ転がして伸ばす */
+export type PianoStyle = 'block' | 'arpeggio'
 
 /** 1つの和音の配置。左右の手を分けて持つ */
 export interface Voicing {
